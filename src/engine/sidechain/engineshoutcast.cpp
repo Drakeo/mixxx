@@ -613,11 +613,11 @@ void EngineShoutcast::updateMetaData() {
                 // the references to $title and $artist by doing a single
                 // pass over the string
                 int replaceIndex = 0;
+                
                 // Make a copy so we don't overwrite the references only
-                // once per streaming session
-           QString metadataFinal = m_metadataFormat;
+                // once per streaming session.
+                QString metadataFinal = m_metadataFormat;
                 do {
-		  
                     // find the next occurrence
                     replaceIndex = metadataFinal.indexOf(
                                       QRegExp("\\$artist|\\$title"),
@@ -635,7 +635,7 @@ void EngineShoutcast::updateMetaData() {
                             replaceIndex += title.length();
                         }
                     }
-               } while (replaceIndex != -1);
+                } while (replaceIndex != -1);
 
                 QByteArray baSong = encodeString(metadataFinal);
                 shout_metadata_add(m_pShoutMetaData, "song",  baSong.constData());
