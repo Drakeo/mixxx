@@ -21,14 +21,15 @@ EffectManifest FlangerEffect::getManifest() {
     manifest.setName(QObject::tr("Flanger"));
     manifest.setAuthor("The Mixxx Team");
     manifest.setVersion("1.0");
-    manifest.setDescription("TODO");
+    manifest.setDescription(QObject::tr(
+        "A simple modulation effect, created by taking the input signal "
+        "and mixing it with a delayed, pitch modulated copy of itself."));
 
     EffectManifestParameter* depth = manifest.addParameter();
     depth->setId("depth");
     depth->setName(QObject::tr("Depth"));
-    depth->setDescription("TODO");
+    depth->setDescription("Controls the intensity of the effect.");
     depth->setControlHint(EffectManifestParameter::CONTROL_KNOB_LINEAR);
-    depth->setValueHint(EffectManifestParameter::VALUE_FLOAT);
     depth->setSemanticHint(EffectManifestParameter::SEMANTIC_UNKNOWN);
     depth->setUnitsHint(EffectManifestParameter::UNITS_UNKNOWN);
     depth->setDefault(0.0);
@@ -38,9 +39,8 @@ EffectManifest FlangerEffect::getManifest() {
     EffectManifestParameter* delay = manifest.addParameter();
     delay->setId("delay");
     delay->setName(QObject::tr("Delay"));
-    delay->setDescription("TODO");
+    delay->setDescription("Sets the value for the delay length.");
     delay->setControlHint(EffectManifestParameter::CONTROL_KNOB_LINEAR);
-    delay->setValueHint(EffectManifestParameter::VALUE_FLOAT);
     delay->setSemanticHint(EffectManifestParameter::SEMANTIC_UNKNOWN);
     delay->setUnitsHint(EffectManifestParameter::UNITS_UNKNOWN);
     delay->setDefault(50.0);
@@ -50,9 +50,8 @@ EffectManifest FlangerEffect::getManifest() {
     EffectManifestParameter* period = manifest.addParameter();
     period->setId("period");
     period->setName(QObject::tr("Period"));
-    period->setDescription("TODO");
+    period->setDescription("Controls the speed of the effect.");
     period->setControlHint(EffectManifestParameter::CONTROL_KNOB_LINEAR);
-    period->setValueHint(EffectManifestParameter::VALUE_FLOAT);
     period->setSemanticHint(EffectManifestParameter::SEMANTIC_UNKNOWN);
     period->setUnitsHint(EffectManifestParameter::UNITS_UNKNOWN);
     period->setDefault(50000.0);
@@ -79,14 +78,14 @@ void FlangerEffect::processGroup(const QString& group,
                                  const CSAMPLE* pInput, CSAMPLE* pOutput,
                                  const unsigned int numSamples,
                                  const unsigned int sampleRate,
+                                 const EffectProcessor::EnableState enableState,
                                  const GroupFeatureState& groupFeatures) {
     Q_UNUSED(group);
+    Q_UNUSED(enableState);
     Q_UNUSED(groupFeatures);
     Q_UNUSED(sampleRate);
-    CSAMPLE lfoPeriod = m_pPeriodParameter ?
-            m_pPeriodParameter->value().toDouble() : 0.0f;
-    CSAMPLE lfoDepth = m_pDepthParameter ?
-            m_pDepthParameter->value().toDouble() : 0.0f;
+    CSAMPLE lfoPeriod = m_pPeriodParameter->value();
+    CSAMPLE lfoDepth = m_pDepthParameter->value();
     // Unused in EngineFlanger
     // CSAMPLE lfoDelay = m_pDelayParameter ?
     //         m_pDelayParameter->value().toDouble() : 0.0f;

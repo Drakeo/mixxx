@@ -115,6 +115,7 @@ int BasePlaylistFeature::playlistIdFromIndex(QModelIndex index) {
 void BasePlaylistFeature::activate() {
     emit(switchToView(m_rootViewName));
     emit(restoreSearch(QString())); // Null String disables search box
+    emit(enableCoverArtDisplay(true));
 }
 
 void BasePlaylistFeature::activateChild(const QModelIndex& index) {
@@ -123,6 +124,7 @@ void BasePlaylistFeature::activateChild(const QModelIndex& index) {
     if (playlistId != -1 && m_pPlaylistTableModel) {
         m_pPlaylistTableModel->setTableModel(playlistId);
         emit(showTrackModel(m_pPlaylistTableModel));
+        emit(enableCoverArtDisplay(true));
     }
 }
 
@@ -493,8 +495,8 @@ void BasePlaylistFeature::bindWidget(WLibrary* libraryWidget,
     libraryWidget->registerView(m_rootViewName, edit);
 }
 
-void BasePlaylistFeature::htmlLinkClicked(const QUrl & link) {
-    if (QString(link.path())=="create") {
+void BasePlaylistFeature::htmlLinkClicked(const QUrl& link) {
+    if (QString(link.path()) == "create") {
         slotCreatePlaylist();
     } else {
         qDebug() << "Unknonw playlist link clicked" << link.path();

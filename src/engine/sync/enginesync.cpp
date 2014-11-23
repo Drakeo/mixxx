@@ -155,7 +155,7 @@ void EngineSync::requestEnableSync(Syncable* pSyncable, bool bEnabled) {
             foundPlayingDeck = true;
         }
         activateFollower(pSyncable);
-        if (foundPlayingDeck) {
+        if (foundPlayingDeck && pSyncable->isPlaying()) {
             // Users also expect phase to be aligned when they press the sync button.
             pSyncable->requestSyncPhase();
         }
@@ -198,6 +198,33 @@ void EngineSync::notifyPlaying(Syncable* pSyncable, bool playing) {
                 m_pInternalClock->setMasterBeatDistance(uniqueSyncEnabled->getBeatDistance());
             }
         }
+    }
+}
+
+void EngineSync::notifyTrackLoaded(Syncable* pSyncable) {
+    // If there are no other sync decks, initialize master based on this.
+    // If there is, make sure to set our rate based on that.
+
+    // TODO(owilliams): Check this logic with an explicit master
+    if (pSyncable->getSyncMode() != SYNC_FOLLOWER) {
+        return;
+    }
+
+    bool sync_deck_exists = false;
+    foreach (const Syncable* pOtherSyncable, m_syncables) {
+        if (pOtherSyncable == pSyncable) {
+            continue;
+        }
+        if (pOtherSyncable->getSyncMode() != SYNC_NONE && pOtherSyncable->getBpm() != 0) {
+            sync_deck_exists = true;
+            break;
+        }
+    }
+
+    if (!sync_deck_exists) {
+        setMasterBpm(pSyncable, pSyncable->getBpm());
+    } else {
+        pSyncable->setMasterBpm(masterBpm());
     }
 }
 

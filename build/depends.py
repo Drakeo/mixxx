@@ -194,7 +194,7 @@ class Qt(Dependence):
         qt_modules = [
             'QtCore', 'QtGui', 'QtOpenGL', 'QtXml', 'QtSvg',
             'QtSql', 'QtScript', 'QtXmlPatterns', 'QtNetwork',
-            'QtTest'
+            'QtTest', 'QtScriptTools'
         ]
         if qt5:
             qt_modules.extend(['QtWidgets', 'QtConcurrent'])
@@ -213,6 +213,10 @@ class Qt(Dependence):
         if qt5:
             # Enable qt4 support.
             build.env.Append(CPPDEFINES='QT_DISABLE_DEPRECATED_BEFORE')
+
+        # Set qt_sqlite_plugin flag if we should package the Qt SQLite plugin.
+        build.flags['qt_sqlite_plugin'] = util.get_flags(
+            build.env, 'qt_sqlite_plugin', 0)
 
         # Enable Qt include paths
         if build.platform_is_linux:
@@ -336,10 +340,6 @@ class Qt(Dependence):
                 build.env.Append(LINKFLAGS="-Wl,-rpath," + framework_path)
                 build.env.Append(LINKFLAGS="-L" + framework_path)
 
-        # QtSQLite DLL
-        if build.platform_is_windows:
-            build.flags['sqlitedll'] = util.get_flags(
-                build.env, 'sqlitedll', 1)
 
 class TestHeaders(Dependence):
     def configure(self, build, conf):
@@ -532,6 +532,7 @@ class MixxxCore(Feature):
                    "dlghidden.cpp",
                    "dlgmissing.cpp",
                    "dlgdevelopertools.cpp",
+                   "dlgcoverartfullsize.cpp",
 
                    "effects/effectmanifest.cpp",
                    "effects/effectmanifestparameter.cpp",
@@ -553,10 +554,13 @@ class MixxxCore(Feature):
 
                    "effects/native/nativebackend.cpp",
                    "effects/native/bitcrushereffect.cpp",
-                   "effects/native/butterworth8eqeffect.cpp",
+                   "effects/native/linkwitzriley8eqeffect.cpp",
+                   "effects/native/bessel4lvmixeqeffect.cpp",
+                   "effects/native/bessel8lvmixeqeffect.cpp",
                    "effects/native/graphiceqeffect.cpp",
                    "effects/native/flangereffect.cpp",
                    "effects/native/filtereffect.cpp",
+                   "effects/native/moogladder4filtereffect.cpp",
                    "effects/native/reverbeffect.cpp",
                    "effects/native/echoeffect.cpp",
                    "effects/native/reverb/Reverb.cc",
@@ -577,11 +581,14 @@ class MixxxCore(Feature):
                    "engine/enginebufferscale.cpp",
                    "engine/enginebufferscaledummy.cpp",
                    "engine/enginebufferscalelinear.cpp",
-                   "engine/enginefilterblock.cpp",
                    "engine/enginefilterbiquad1.cpp",
+                   "engine/enginefiltermoogladder4.cpp",
                    "engine/enginefilterbessel4.cpp",
+                   "engine/enginefilterbessel8.cpp",
                    "engine/enginefilterbutterworth4.cpp",
                    "engine/enginefilterbutterworth8.cpp",
+                   "engine/enginefilterlinkwitzriley4.cpp",
+                   "engine/enginefilterlinkwitzriley8.cpp",
                    "engine/enginefilter.cpp",
                    "engine/engineobject.cpp",
                    "engine/enginepregain.cpp",
@@ -651,6 +658,7 @@ class MixxxCore(Feature):
                    "upgrade.cpp",
 
                    "soundsource.cpp",
+                   "soundsourcetaglib.cpp",
 
                    "sharedglcontext.cpp",
                    "widget/controlwidgetconnection.cpp",
@@ -658,6 +666,7 @@ class MixxxCore(Feature):
                    "widget/wwidget.cpp",
                    "widget/wwidgetgroup.cpp",
                    "widget/wwidgetstack.cpp",
+                   "widget/wsizeawarestack.cpp",
                    "widget/wlabel.cpp",
                    "widget/wtracktext.cpp",
                    "widget/wnumber.cpp",
@@ -669,6 +678,7 @@ class MixxxCore(Feature):
                    "widget/wdisplay.cpp",
                    "widget/wvumeter.cpp",
                    "widget/wpushbutton.cpp",
+                   "widget/weffectpushbutton.cpp",
                    "widget/wslidercomposed.cpp",
                    "widget/wstatuslight.cpp",
                    "widget/woverview.cpp",
@@ -682,6 +692,7 @@ class MixxxCore(Feature):
                    "widget/wimagestore.cpp",
                    "widget/hexspinbox.cpp",
                    "widget/wtrackproperty.cpp",
+                   "widget/wstarrating.cpp",
                    "widget/weffectchain.cpp",
                    "widget/weffect.cpp",
                    "widget/weffectparameter.cpp",
@@ -691,6 +702,9 @@ class MixxxCore(Feature):
                    "widget/wkey.cpp",
                    "widget/wcombobox.cpp",
                    "widget/wsplitter.cpp",
+                   "widget/wcoverart.cpp",
+                   "widget/wcoverartlabel.cpp",
+                   "widget/wcoverartmenu.cpp",
 
                    "network.cpp",
                    "musicbrainz/tagfetcher.cpp",
@@ -719,6 +733,8 @@ class MixxxCore(Feature):
                    "library/missingtablemodel.cpp",
                    "library/hiddentablemodel.cpp",
                    "library/proxytrackmodel.cpp",
+                   "library/coverart.cpp",
+                   "library/coverartcache.cpp",
 
                    "library/playlisttablemodel.cpp",
                    "library/libraryfeature.cpp",
@@ -779,6 +795,7 @@ class MixxxCore(Feature):
                    "library/bpmdelegate.cpp",
                    "library/bpmeditor.cpp",
                    "library/previewbuttondelegate.cpp",
+                   "library/coverartdelegate.cpp",
                    "audiotagger.cpp",
 
                    "library/treeitemmodel.cpp",
@@ -849,6 +866,8 @@ class MixxxCore(Feature):
                    "skin/colorschemeparser.cpp",
                    "skin/tooltips.cpp",
                    "skin/skincontext.cpp",
+                   "skin/svgparser.cpp",
+                   "skin/pixmapsource.cpp",
 
                    "sampleutil.cpp",
                    "trackinfoobject.cpp",
@@ -896,6 +915,8 @@ class MixxxCore(Feature):
                    "util/sandbox.cpp",
                    "util/file.cpp",
                    "util/mac.cpp",
+                   "util/task.cpp",
+                   "util/experiment.cpp",
 
                    '#res/mixxx.qrc'
                    ]
@@ -921,6 +942,7 @@ class MixxxCore(Feature):
             'dlgaboutdlg.ui',
             'dlganalysis.ui',
             'dlgautodj.ui',
+            'dlgcoverartfullsize.ui',
             'dlgdevelopertoolsdlg.ui',
             'dlghidden.ui',
             'dlgmissing.ui',
@@ -968,10 +990,10 @@ class MixxxCore(Feature):
 
         if build.toolchain_is_gnu:
             # Default GNU Options
-            # TODO(XXX) always generate debugging info?
             build.env.Append(CCFLAGS='-pipe')
             build.env.Append(CCFLAGS='-Wall')
             build.env.Append(CCFLAGS='-Wextra')
+            # TODO(XXX) always generate debugging info?
             build.env.Append(CCFLAGS='-g')
         elif build.toolchain_is_msvs:
             # Validate the specified winlib directory exists
@@ -991,7 +1013,7 @@ class MixxxCore(Feature):
             # Find executables (e.g. protoc) in the winlib path
             build.env.AppendENVPath('PATH', mixxx_lib_path)
             build.env.AppendENVPath('PATH', os.path.join(mixxx_lib_path, 'bin'))
-            
+
             # Valid values of /MACHINE are: {ARM|EBC|X64|X86}
             # http://msdn.microsoft.com/en-us/library/5wy54dk2.aspx
             if build.architecture_is_x86:
@@ -1013,15 +1035,17 @@ class MixxxCore(Feature):
             # http://msdn.microsoft.com/en-us/library/bb385193.aspx
             build.env.Append(CCFLAGS='/MP')
 
+            # Generate debugging information for compilation units and
+            # executables linked regardless of whether we are creating a debug
+            # build. Having PDB files for our releases is helpful for debugging.
+            build.env.Append(LINKFLAGS='/DEBUG')
+            build.env.Append(CCFLAGS='/Zi')
+
             if build.build_is_debug:
                 # Important: We always build Mixxx with the Multi-Threaded DLL
                 # runtime because Mixxx loads DLLs at runtime. Since this is a
                 # debug build, use the debug version of the MD runtime.
                 build.env.Append(CCFLAGS='/MDd')
-                # Generate debugging information for executables linked.
-                build.env.Append(LINKFLAGS='/DEBUG')
-                # Generate debugging information for compilation units.
-                build.env.Append(CCFLAGS='/Zi')
                 # Enable the Mixxx debug console (see main.cpp).
                 build.env.Append(CPPDEFINES='DEBUGCONSOLE')
             else:

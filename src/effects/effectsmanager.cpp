@@ -3,13 +3,18 @@
 #include <QMetaType>
 #include <QtAlgorithms>
 
-#include "effects/effectchainmanager.h"
 #include "engine/effects/engineeffectsmanager.h"
+#include "engine/effects/engineeffect.h"
+
+const char* kEqualizerRackName = "[EqualizerChain]";
+const char* kQuickEffectRackName = "[QuickEffectChain]";
 
 EffectsManager::EffectsManager(QObject* pParent, ConfigObject<ConfigValue>* pConfig)
         : QObject(pParent),
           m_pEffectChainManager(new EffectChainManager(pConfig, this)),
-          m_nextRequestId(0) {
+          m_nextRequestId(0),
+          m_pLoEqFreq(NULL),
+          m_pHiEqFreq(NULL) {
     qRegisterMetaType<EffectChain::InsertionType>("EffectChain::InsertionType");
     QPair<EffectsRequestPipe*, EffectsResponsePipe*> requestPipes =
             TwoWayMessagePipe<EffectsRequest*, EffectsResponse>::makeTwoWayMessagePipe(
@@ -20,7 +25,7 @@ EffectsManager::EffectsManager(QObject* pParent, ConfigObject<ConfigValue>* pCon
 }
 
 EffectsManager::~EffectsManager() {
-    m_pEffectChainManager->saveEffectChains();
+    //m_pEffectChainManager->saveEffectChains();
     processEffectsResponses();
     delete m_pEffectChainManager;
     while (!m_effectsBackends.isEmpty()) {
@@ -32,6 +37,13 @@ EffectsManager::~EffectsManager() {
         delete it.value();
         it = m_activeRequests.erase(it);
     }
+
+    delete m_pHiEqFreq;
+    delete m_pLoEqFreq;
+    // Safe because the Engine is deleted before EffectsManager. Also, it holds
+    // a bare pointer to m_pRequestPipe so it is critical that it does not
+    // outlast us.
+    delete m_pEngineEffectsManager;
 }
 
 void EffectsManager::addEffectsBackend(EffectsBackend* pBackend) {
@@ -49,28 +61,48 @@ const QSet<QString>& EffectsManager::registeredGroups() const {
     return m_pEffectChainManager->registeredGroups();
 }
 
-const QSet<QString> EffectsManager::getAvailableEffects() const {
-    QSet<QString> availableEffects;
+const QList<QString> EffectsManager::getAvailableEffects() const {
+    QList<QString> availableEffects;
 
     foreach (EffectsBackend* pBackend, m_effectsBackends) {
-        QSet<QString> backendEffects = pBackend->getEffectIds();
+        const QList<QString>& backendEffects = pBackend->getEffectIds();
         foreach (QString effectId, backendEffects) {
             if (availableEffects.contains(effectId)) {
                 qWarning() << "WARNING: Duplicate effect ID" << effectId;
                 continue;
             }
-            availableEffects.insert(effectId);
+            availableEffects.append(effectId);
         }
     }
 
     return availableEffects;
 }
 
+const QList<QPair<QString, QString> > EffectsManager::getEffectNamesFiltered(
+        EffectManifestFilterFnc filter) const {
+    QList<QPair<QString, QString> > filteredEQEffectNames;
+    QString currentEffectName;
+    foreach (EffectsBackend* pBackend, m_effectsBackends) {
+        QList<QString> backendEffects = pBackend->getEffectIds();
+        foreach (QString effectId, backendEffects) {
+            EffectManifest manifest = pBackend->getManifest(effectId);
+            if (filter && !filter(&manifest)) {
+                continue;
+            }
+            currentEffectName = manifest.name();
+            filteredEQEffectNames.append(qMakePair(effectId, currentEffectName));
+        }
+    }
+
+    return filteredEQEffectNames;
+}
+
+bool EffectsManager::isEQ(const QString& effectId) const {
+    return getEffectManifest(effectId).isMixingEQ();
+}
+
 QString EffectsManager::getNextEffectId(const QString& effectId) {
-    // TODO(rryan): HACK SUPER JANK ALERT. REPLACE THIS WITH SOMETHING NOT
-    // STUPID
-    QList<QString> effects = getAvailableEffects().toList();
-    qSort(effects.begin(), effects.end());
+    const QList<QString> effects = getAvailableEffects();
 
     if (effects.isEmpty()) {
         return QString();
@@ -80,20 +112,16 @@ QString EffectsManager::getNextEffectId(const QString& effectId) {
         return effects.first();
     }
 
-    QList<QString>::const_iterator it =
-            qUpperBound(effects.constBegin(), effects.constEnd(), effectId);
-    if (it == effects.constEnd()) {
-        return effects.first();
+    int index = effects.indexOf(effectId);
+    if (++index >= effects.size()) {
+        index = 0;
     }
-
-    return *it;
+    return effects.at(index);
 }
 
 QString EffectsManager::getPrevEffectId(const QString& effectId) {
-    // TODO(rryan): HACK SUPER JANK ALERT. REPLACE THIS WITH SOMETHING NOT
-    // STUPID
-    QList<QString> effects = getAvailableEffects().toList();
-    qSort(effects.begin(), effects.end());
+    const QList<QString> effects = getAvailableEffects();
+    //qSort(effects.begin(), effects.end());  For alphabetical order
 
     if (effects.isEmpty()) {
         return QString();
@@ -103,14 +131,12 @@ QString EffectsManager::getPrevEffectId(const QString& effectId) {
         return effects.last();
     }
 
-    QList<QString>::const_iterator it =
-            qLowerBound(effects.constBegin(), effects.constEnd(), effectId);
-    if (it == effects.constBegin()) {
-        return effects.last();
+    int index = effects.indexOf(effectId);
+    if (--index < 0) {
+        index = effects.size() - 1;
     }
+    return effects.at(index);
 
-    --it;
-    return *it;
 }
 
 EffectManifest EffectsManager::getEffectManifest(const QString& effectId) const {
@@ -132,24 +158,43 @@ EffectPointer EffectsManager::instantiateEffect(const QString& effectId) {
     return EffectPointer();
 }
 
-EffectRackPointer EffectsManager::addEffectRack() {
-    return m_pEffectChainManager->addEffectRack();
+StandardEffectRackPointer EffectsManager::addStandardEffectRack() {
+    return m_pEffectChainManager->addStandardEffectRack();
 }
 
-EffectRackPointer EffectsManager::getEffectRack(int i) {
-    return m_pEffectChainManager->getEffectRack(i);
+StandardEffectRackPointer EffectsManager::getStandardEffectRack(int rack) {
+    return m_pEffectChainManager->getStandardEffectRack(rack);
+}
+
+EqualizerRackPointer EffectsManager::addEqualizerRack() {
+    return m_pEffectChainManager->addEqualizerRack();
+}
+
+EqualizerRackPointer EffectsManager::getEqualizerRack(int rack) {
+    return m_pEffectChainManager->getEqualizerRack(rack);
+}
+
+QuickEffectRackPointer EffectsManager::addQuickEffectRack() {
+    return m_pEffectChainManager->addQuickEffectRack();
+}
+
+QuickEffectRackPointer EffectsManager::getQuickEffectRack(int rack) {
+    return m_pEffectChainManager->getQuickEffectRack(rack);
+}
+
+EffectRackPointer EffectsManager::getEffectRack(const QString& group) {
+    return m_pEffectChainManager->getEffectRack(group);
 }
 
 void EffectsManager::setupDefaults() {
     //m_pEffectChainManager->loadEffectChains();
 
-    EffectRackPointer pRack = addEffectRack();
-    pRack->addEffectChainSlot();
-    pRack->addEffectChainSlot();
-    pRack->addEffectChainSlot();
-    pRack->addEffectChainSlot();
-
-    QSet<QString> effects = getAvailableEffects();
+    // Add a general purpose rack
+    StandardEffectRackPointer pStandardRack = addStandardEffectRack();
+    pStandardRack->addEffectChainSlot();
+    pStandardRack->addEffectChainSlot();
+    pStandardRack->addEffectChainSlot();
+    pStandardRack->addEffectChainSlot();
 
     EffectChainPointer pChain = EffectChainPointer(new EffectChain(
         this, "org.mixxx.effectchain.flanger"));
@@ -188,9 +233,23 @@ void EffectsManager::setupDefaults() {
     pEffect = instantiateEffect("org.mixxx.effects.echo");
     pChain->addEffect(pEffect);
     m_pEffectChainManager->addEffectChain(pChain);
+
+    // These controls are used inside EQ Effects
+    m_pLoEqFreq = new ControlPotmeter(ConfigKey("[Mixer Profile]", "LoEQFrequency"), 0., 22040);
+    m_pHiEqFreq = new ControlPotmeter(ConfigKey("[Mixer Profile]", "HiEQFrequency"), 0., 22040);
+
+    // Add an EqualizerRack.
+    addEqualizerRack();
+
+    // Add a QuickEffectRack
+    addQuickEffectRack();
 }
 
 bool EffectsManager::writeRequest(EffectsRequest* request) {
+    if (m_pRequestPipe.isNull()) {
+        return false;
+    }
+
     // This is effectively only GC at this point so only deal with responses
     // when writing new requests.
     processEffectsResponses();
@@ -204,6 +263,10 @@ bool EffectsManager::writeRequest(EffectsRequest* request) {
 }
 
 void EffectsManager::processEffectsResponses() {
+    if (m_pRequestPipe.isNull()) {
+        return;
+    }
+
     EffectsResponse response;
     while (m_pRequestPipe->readMessages(&response, 1) == 1) {
         QHash<qint64, EffectsRequest*>::iterator it =
@@ -222,11 +285,18 @@ void EffectsManager::processEffectsResponses() {
             if (!response.success) {
                 qWarning() << debugString() << "WARNING: Failed EffectsRequest"
                            << "type" << pRequest->type;
+            } else {
+                //qDebug() << debugString() << "EffectsRequest Success"
+                //           << "type" << pRequest->type;
+
+                if (pRequest->type == EffectsRequest::REMOVE_EFFECT_FROM_CHAIN) {
+                    //qDebug() << debugString() << "delete" << pRequest->RemoveEffectFromChain.pEffect;
+                    delete pRequest->RemoveEffectFromChain.pEffect;
+                }
             }
 
             delete pRequest;
             it = m_activeRequests.erase(it);
         }
     }
-
 }

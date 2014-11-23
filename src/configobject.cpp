@@ -93,12 +93,12 @@ void ConfigValueKbd::valCopy(const ConfigValueKbd& v)
     QTextStream(&value) << m_qKey.toString();
 }
 
-bool operator==(const ConfigValue & s1, const ConfigValue & s2)
+bool operator==(const ConfigValue& s1, const ConfigValue& s2)
 {
     return (s1.value.toUpper() == s2.value.toUpper());
 }
 
-bool operator==(const ConfigValueKbd & s1, const ConfigValueKbd & s2)
+bool operator==(const ConfigValueKbd& s1, const ConfigValueKbd& s2)
 {
     return (s1.value.toUpper() == s2.value.toUpper());
 }
@@ -192,7 +192,7 @@ ConfigKey *ConfigObject<ValueType>::get(ValueType v)
     while (iterator.hasNext())
     {
         it = iterator.next();
-        if (QString::compare(it->val->value, v.value, Qt::CaseInsensitive) == 0){
+        if (QString::compare(it->val->value, v.value, Qt::CaseInsensitive) == 0) {
             //qDebug() << "ConfigObject #534: QString::compare match for " << it->key->group << it->key->item;
             return it->key;
         }
@@ -274,7 +274,6 @@ template <class ValueType> bool ConfigObject<ValueType>::Parse()
     return true;
 }
 
-
 template <class ValueType> void ConfigObject<ValueType>::clear()
 {
     //Delete the pointers, because that's what we did before we
@@ -340,40 +339,46 @@ QString ConfigObject<ValueType>::getResourcePath() {
     // On Windows it is always (and only) app dir.
     // On OS X it is the current directory and then the Resources/ dir in the app bundle
     //
-    QString qResourcePath; // TODO: this only changes once (on first load) during a run should make this a singleton.
+
+#ifdef __WINDOWS__
+    bool windows = true;
+#else
+    bool windows = false;
+#endif
 
     // Try to read in the resource directory from the command line
-    qResourcePath = CmdlineArgs::Instance().getResourcePath();
+    QString qResourcePath = CmdlineArgs::Instance().getResourcePath();
 
     if (qResourcePath.isNull() || qResourcePath.isEmpty()) {
-#ifdef __UNIX__
-        // On Linux, check if the path is stored in the configuration database.
-        if (getValueString(ConfigKey("[Config]","Path")).length()>0 && QDir(getValueString(ConfigKey("[Config]","Path"))).exists())
+        QDir mixxxDir(QCoreApplication::applicationDirPath());
+        // Always check to see if the path is stored in the configuration
+        // database unless we are running on Windows. See Bug #1392854.
+        if (!windows && getValueString(ConfigKey("[Config]","Path")).length()>0 && QDir(getValueString(ConfigKey("[Config]","Path"))).exists()) {
             qResourcePath = getValueString(ConfigKey("[Config]","Path"));
-        else
-        {
-            // Set the path according to the compile time define, UNIX_SHARE_PATH
+        } else if (mixxxDir.cd("res")) {
+            // We are running out of the repository root.
+            qResourcePath = mixxxDir.absolutePath();
+        } else if (mixxxDir.absolutePath().endsWith("_build") &&
+                   mixxxDir.cdUp() && mixxxDir.cd("res")) {
+            // We are running out of the (lin|win|osx)XX_build folder.
+            qResourcePath = mixxxDir.absolutePath();
+        }
+#ifdef __UNIX__
+        // On Linux if all of the above fail the /usr/share path is the logical
+        // place to look.
+        else {
             qResourcePath = UNIX_SHARE_PATH;
         }
 #endif
 #ifdef __WINDOWS__
-        // On Windows, set the config dir relative to the application dir
-        qResourcePath = QCoreApplication::applicationDirPath();
+        // On Windows, set the config dir relative to the application dir if all
+        // of the above fail.
+        else {
+            qResourcePath = QCoreApplication::applicationDirPath();
+        }
 #endif
 #ifdef __APPLE__
-        QDir mixxxDir(QCoreApplication::applicationDirPath());
-
-        if (mixxxDir.absolutePath().endsWith("_build")) {
-            // We are running out of the osxXX_build folder.
-            if (mixxxDir.cdUp() && mixxxDir.cd("res")) {
-                qResourcePath = mixxxDir.absolutePath();
-            } else {
-                // TODO(rryan): What should we do here?
-            }
-        } else if (mixxxDir.cd("res")) {
-            // We are running out of the repository root.
-            qResourcePath = mixxxDir.absolutePath();
-        } else if (mixxxDir.cdUp() && mixxxDir.cd("Resources")) {
+        else if (mixxxDir.cdUp() && mixxxDir.cd("Resources")) {
             // Release configuraton
             qResourcePath = mixxxDir.absolutePath();
         } else {
@@ -393,9 +398,10 @@ QString ConfigObject<ValueType>::getResourcePath() {
         qResourcePath.append("/");
     }
 
+    qDebug() << "Loading resources from " << qResourcePath;
+
     return qResourcePath;
 }
-
 
 template <class ValueType> ConfigObject<ValueType>::ConfigObject(QDomNode node) {
 

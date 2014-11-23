@@ -1,4 +1,3 @@
-
 // bpmcontrol.h
 // Created 7/5/2009 by RJ Ryan (rryan@mit.edu)
 
@@ -21,15 +20,18 @@ class BpmControl : public EngineControl {
     Q_OBJECT
 
   public:
-    BpmControl(const char* _group, ConfigObject<ConfigValue>* _config);
+    BpmControl(QString group, ConfigObject<ConfigValue>* _config);
     virtual ~BpmControl();
 
     double getBpm() const;
     double getFileBpm() const { return m_pFileBpm ? m_pFileBpm->get() : 0.0; }
     // When in master sync mode, ratecontrol calls calcSyncedRate to figure out
-    // how fast the track should play back.  The rate may be adjusted (ie,
-    // not precisely equal to the ratio of the bpms) if the
-    // user tweaked the sync position or if the tracks are falling out of sync.
+    // how fast the track should play back.  The returned rate is usually just
+    // the correct pitch to match bpms.  The usertweak argument represents
+    // how much the user is nudging the pitch to get two tracks into sync, and
+    // that value is added to the rate by bpmcontrol.  The rate may be
+    // further adjusted if bpmcontrol discovers that the tracks have fallen
+    // out of sync.
     double calcSyncedRate(double userTweak);
     // Get the phase offset from the specified position.
     double getPhaseOffset(double reference_position);
@@ -85,6 +87,7 @@ class BpmControl : public EngineControl {
     void slotAdjustRateSlider();
     void slotUpdatedTrackBeats();
     void slotBeatsTranslate(double);
+    void slotBeatsTranslateMatchAlignment(double);
 
   private:
     SyncMode getSyncMode() const {
@@ -129,6 +132,8 @@ class BpmControl : public EngineControl {
     // Button that translates the beats so the nearest beat is on the current
     // playposition.
     ControlPushButton* m_pTranslateBeats;
+    // Button that translates beats to match another playing deck
+    ControlPushButton* m_pBeatsTranslateMatchAlignment;
 
     double m_dPreviousSample;
 

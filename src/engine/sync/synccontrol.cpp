@@ -15,10 +15,10 @@ const double SyncControl::kBpmUnity = 1.0;
 const double SyncControl::kBpmHalve = 0.5;
 const double SyncControl::kBpmDouble = 2.0;
 
-SyncControl::SyncControl(const char* pGroup, ConfigObject<ConfigValue>* pConfig,
+SyncControl::SyncControl(QString group, ConfigObject<ConfigValue>* pConfig,
                          EngineChannel* pChannel, SyncableListener* pEngineSync)
-        : EngineControl(pGroup, pConfig),
-          m_sGroup(pGroup),
+        : EngineControl(group, pConfig),
+          m_sGroup(group),
           m_pChannel(pChannel),
           m_pEngineSync(pEngineSync),
           m_pBpmControl(NULL),
@@ -29,36 +29,36 @@ SyncControl::SyncControl(const char* pGroup, ConfigObject<ConfigValue>* pConfig,
           m_beatDistance(0.0) {
     // Play button.  We only listen to this to disable master if the deck is
     // stopped.
-    m_pPlayButton.reset(new ControlObjectSlave(pGroup, "play", this));
+    m_pPlayButton.reset(new ControlObjectSlave(group, "play", this));
     m_pPlayButton->connectValueChanged(this, SLOT(slotControlPlay(double)),
                                        Qt::DirectConnection);
 
-    m_pSyncMode.reset(new ControlPushButton(ConfigKey(pGroup, "sync_mode")));
+    m_pSyncMode.reset(new ControlPushButton(ConfigKey(group, "sync_mode")));
     m_pSyncMode->setButtonMode(ControlPushButton::TOGGLE);
     m_pSyncMode->setStates(SYNC_NUM_MODES);
     m_pSyncMode->connectValueChangeRequest(
             this, SLOT(slotSyncModeChangeRequest(double)), Qt::DirectConnection);
 
     m_pSyncMasterEnabled.reset(
-            new ControlPushButton(ConfigKey(pGroup, "sync_master")));
+            new ControlPushButton(ConfigKey(group, "sync_master")));
     m_pSyncMasterEnabled->setButtonMode(ControlPushButton::TOGGLE);
     m_pSyncMasterEnabled->connectValueChangeRequest(
             this, SLOT(slotSyncMasterEnabledChangeRequest(double)), Qt::DirectConnection);
 
     m_pSyncEnabled.reset(
-            new ControlPushButton(ConfigKey(pGroup, "sync_enabled")));
+            new ControlPushButton(ConfigKey(group, "sync_enabled")));
     m_pSyncEnabled->setButtonMode(ControlPushButton::LONGPRESSLATCHING);
     m_pSyncEnabled->connectValueChangeRequest(
             this, SLOT(slotSyncEnabledChangeRequest(double)), Qt::DirectConnection);
 
     m_pSyncBeatDistance.reset(
-            new ControlObject(ConfigKey(pGroup, "beat_distance")));
+            new ControlObject(ConfigKey(group, "beat_distance")));
 
-    m_pPassthroughEnabled.reset(new ControlObjectSlave(pGroup, "passthrough", this));
+    m_pPassthroughEnabled.reset(new ControlObjectSlave(group, "passthrough", this));
     m_pPassthroughEnabled->connectValueChanged(this, SLOT(slotPassthroughChanged(double)),
                                                Qt::DirectConnection);
 
-    m_pEjectButton.reset(new ControlObjectSlave(pGroup, "eject", this));
+    m_pEjectButton.reset(new ControlObjectSlave(group, "eject", this));
     m_pEjectButton->connectValueChanged(this, SLOT(slotEjectPushed(double)),
                                         Qt::DirectConnection);
 
@@ -293,6 +293,15 @@ void SyncControl::trackLoaded(TrackPointer pTrack) {
     if (getSyncMode() == SYNC_MASTER) {
         // If we loaded a new track while master, hand off.
         m_pChannel->getEngineBuffer()->requestSyncMode(SYNC_NONE);
+    }
+
+    if (getSyncMode() != SYNC_NONE) {
+        // Because of the order signals get processed, the file_bpm CO and
+        // rate slider are not updated as soon as we need them, so do that now.
+        m_pFileBpm->set(pTrack->getBpm());
+        // Horrible exploitation of a friend class. Sorry little guy.
+        m_pBpmControl->slotAdjustRateSlider();
+        m_pEngineSync->notifyTrackLoaded(this);
     }
 }
 

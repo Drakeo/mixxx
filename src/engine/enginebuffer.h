@@ -118,7 +118,7 @@ class EngineBuffer : public EngineObject {
         KEYLOCK_ENGINE_COUNT,
     };
 
-    EngineBuffer(const char* _group, ConfigObject<ConfigValue>* _config,
+    EngineBuffer(QString _group, ConfigObject<ConfigValue>* _config,
                  EngineChannel* pChannel, EngineMaster* pMixingEngine);
     virtual ~EngineBuffer();
     bool getPitchIndpTimeStretch(void);
@@ -147,7 +147,7 @@ class EngineBuffer : public EngineObject {
     void processSlip(int iBufferSize);
     void postProcess(const int iBufferSize);
 
-    const char* getGroup();
+    QString getGroup();
     bool isTrackLoaded();
     TrackPointer getLoadedTrack() const;
 
@@ -162,8 +162,8 @@ class EngineBuffer : public EngineObject {
     // For dependency injection of scalers.
     void setScalerForTest(EngineBufferScale* pScale);
 
-    // For dependency injection of fake tracks.
-    TrackPointer loadFakeTrack();
+    // For dependency injection of fake tracks, with an optional filebpm value.
+    TrackPointer loadFakeTrack(double filebpm = 0);
 
     static QString getKeylockEngineName(KeylockEngine engine) {
         switch (engine) {
@@ -239,7 +239,7 @@ class EngineBuffer : public EngineObject {
     QMutex m_engineLock;
 
     // Holds the name of the control group
-    const char* m_group;
+    QString m_group;
     ConfigObject<ConfigValue>* m_pConfig;
 
     LoopingControl* m_pLoopingControl;

@@ -31,9 +31,9 @@ ControlObject* EnginePregain::s_pEnableReplayGain = NULL;
 /*----------------------------------------------------------------
    A pregaincontrol is ... a pregain.
    ----------------------------------------------------------------*/
-EnginePregain::EnginePregain(const char* group)
+EnginePregain::EnginePregain(QString group)
 {
-    potmeterPregain = new ControlAudioTaperPot(ConfigKey(group, "pregain"), -12, +12, 0.5);
+    m_pPotmeterPregain = new ControlAudioTaperPot(ConfigKey(group, "pregain"), -12, +12, 0.5);
     //Replay Gain things
     m_pControlReplayGain = new ControlObject(ConfigKey(group, "replaygain"));
     m_pTotalGain = new ControlObject(ConfigKey(group, "total_gain"));
@@ -50,7 +50,7 @@ EnginePregain::EnginePregain(const char* group)
 
 EnginePregain::~EnginePregain()
 {
-    delete potmeterPregain;
+    delete m_pPotmeterPregain;
     delete m_pControlReplayGain;
     delete m_pTotalGain;
 
@@ -64,7 +64,7 @@ void EnginePregain::process(CSAMPLE* pInOut, const int iBufferSize) {
 
     float fEnableReplayGain = s_pEnableReplayGain->get();
     const float fReplayGainBoost = s_pReplayGainBoost->get();
-    float fGain = potmeterPregain->get();
+    float fGain = m_pPotmeterPregain->get();
     float fReplayGain = m_pControlReplayGain->get();
     float fReplayGainCorrection = 1;
     float fPassing = m_pPassthroughEnabled->get();
@@ -111,7 +111,7 @@ void EnginePregain::process(CSAMPLE* pInOut, const int iBufferSize) {
     // Clamp gain to within [0, 10.0] to prevent insane gains. This can happen
     // (some corrupt files get really high replay gain values).
     // 10 allows a maximum replay Gain Boost * calculated replay gain of ~2
-    fGain = fGain * math_clamp(fReplayGainCorrection, 0.0f, 10.0f);
+    fGain = fGain * math_clamp_unsafe(fReplayGainCorrection, 0.0f, 10.0f);
 
     m_pTotalGain->set(fGain);
 

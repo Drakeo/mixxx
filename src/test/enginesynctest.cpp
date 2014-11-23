@@ -28,7 +28,7 @@ class EngineSyncTest : public MockedEngineBackendTest {
         return "";
     }
     void assertIsMaster(QString group) {
-        if (group == m_sInternalClockGroup){
+        if (group == m_sInternalClockGroup) {
             ASSERT_EQ(1,
                       ControlObject::getControl(ConfigKey(m_sInternalClockGroup,
                                                           "sync_master"))->get());
@@ -743,6 +743,52 @@ TEST_F(EngineSyncTest, EnableOneDeckInitializesMaster) {
                                                         "beat_distance"))->get());
 }
 
+TEST_F(EngineSyncTest, LoadTrackInitializesMaster) {
+    // If master sync is on when a track gets loaded, the internal clock
+    // may or may not get synced to the new track depending on the state
+    // of other decks and whether they have tracks loaded as well.
+
+    // First eject the fake tracks that come with the testing framework.
+    m_pChannel1->getEngineBuffer()->slotEjectTrack(1.0);
+    m_pChannel2->getEngineBuffer()->slotEjectTrack(1.0);
+    m_pChannel3->getEngineBuffer()->slotEjectTrack(1.0);
+
+    // If sync is on and we load a track, that should initialize master.
+    QScopedPointer<ControlObjectThread> pButtonSyncEnabled1(getControlObjectThread(
+            ConfigKey(m_sGroup1, "sync_enabled")));
+    pButtonSyncEnabled1->slotSet(1.0);
+
+    m_pChannel1->getEngineBuffer()->loadFakeTrack(140.0);
+
+    EXPECT_FLOAT_EQ(140.0,
+                    ControlObject::getControl(ConfigKey(m_sInternalClockGroup, "bpm"))->get());
+    EXPECT_FLOAT_EQ(140.0,
+                    ControlObject::getControl(ConfigKey(m_sGroup1, "bpm"))->get());
+
+    // If sync is on two decks and we load a track, that should still initialize
+    // master.
+    m_pChannel1->getEngineBuffer()->slotEjectTrack(1.0);
+    QScopedPointer<ControlObjectThread> pButtonSyncEnabled2(getControlObjectThread(
+            ConfigKey(m_sGroup2, "sync_enabled")));
+    pButtonSyncEnabled2->slotSet(1.0);
+
+    m_pChannel1->getEngineBuffer()->loadFakeTrack(128.0);
+    EXPECT_FLOAT_EQ(128.0,
+                    ControlObject::getControl(ConfigKey(m_sInternalClockGroup, "bpm"))->get());
+    EXPECT_FLOAT_EQ(128.0,
+                    ControlObject::getControl(ConfigKey(m_sGroup1, "bpm"))->get());
+
+    // If sync is on two decks and one deck is loaded but not playing, we should
+    // still initialize to that deck.
+    m_pChannel2->getEngineBuffer()->loadFakeTrack(110.0);
+    EXPECT_FLOAT_EQ(128.0,
+                    ControlObject::getControl(ConfigKey(m_sInternalClockGroup, "bpm"))->get());
+    EXPECT_FLOAT_EQ(128.0,
+                    ControlObject::getControl(ConfigKey(m_sGroup1, "bpm"))->get());
+    EXPECT_FLOAT_EQ(128.0,
+                    ControlObject::getControl(ConfigKey(m_sGroup2, "bpm"))->get());
+}
+
 TEST_F(EngineSyncTest, EnableOneDeckSliderUpdates) {
     // If we enable a deck to be master, the internal slider should immediately update.
     QScopedPointer<ControlObjectThread> pButtonSyncEnabled1(getControlObjectThread(
@@ -1296,4 +1342,52 @@ TEST_F(EngineSyncTest, SyncPhaseToPlayingNonSyncDeck) {
     EXPECT_GT(0.7, ControlObject::getControl(ConfigKey(m_sGroup1, "beat_distance"))->get());
     EXPECT_GT(0.7, ControlObject::getControl(ConfigKey(m_sInternalClockGroup,
                                                        "beat_distance"))->get());
+}
+
+TEST_F(EngineSyncTest, UserTweakBeatDistance) {
+    // If a deck has a user tweak, and another deck stops such that the first
+    // is used to reseed the master beat distance, make sure the user offset
+    // is taken in to account.  Sigh.
+    QScopedPointer<ControlObjectThread> pFileBpm1(getControlObjectThread(
+        ConfigKey(m_sGroup1, "file_bpm")));
+    pFileBpm1->set(128.0);
+    QScopedPointer<ControlObjectThread> pFileBpm2(getControlObjectThread(
+        ConfigKey(m_sGroup2, "file_bpm")));
+    pFileBpm2->set(128.0);
+    BeatsPointer pBeats1 = BeatFactory::makeBeatGrid(m_pTrack1.data(), 128, 0.0);
+    m_pTrack1->setBeats(pBeats1);
+    BeatsPointer pBeats2 = BeatFactory::makeBeatGrid(m_pTrack2.data(), 128, 0.0);
+    m_pTrack2->setBeats(pBeats2);
+
+    ControlObject::getControl(ConfigKey(m_sGroup1, "quantize"))->set(1.0);
+    ControlObject::getControl(ConfigKey(m_sGroup2, "quantize"))->set(1.0);
+    ControlObject::getControl(ConfigKey(m_sGroup1, "sync_enabled"))->set(1);
+    ControlObject::getControl(ConfigKey(m_sGroup2, "sync_enabled"))->set(1);
+    ControlObject::getControl(ConfigKey(m_sGroup1, "play"))->set(1.0);
+    ControlObject::getControl(ConfigKey(m_sGroup2, "play"))->set(1.0);
+
+    // Spin the wheel, causing the useroffset for group1 to get set.
+    ControlObject::getControl(ConfigKey(m_sGroup1, "wheel"))->set(0.2);
+    for (int i = 0; i < 10; ++i) {
+        ProcessBuffer();
+    }
+    // Play some more buffers with the wheel at 0.
+    ControlObject::getControl(ConfigKey(m_sGroup1, "wheel"))->set(0);
+    for (int i = 0; i < 10; ++i) {
+        ProcessBuffer();
+    }
+
+    // Stop the second deck.  This causes the master beat distance to get
+    // seeded with the beta distance from deck 1.
+    ControlObject::getControl(ConfigKey(m_sGroup2, "play"))->set(0.0);
+
+    // Play a buffer, which is enough to see if the beat distances align.
+    ProcessBuffer();
+
+    // Ah, floating point.
+    double difference = fabs(ControlObject::getControl(ConfigKey(m_sGroup1,
+                                                        "beat_distance"))->get()
+                             - ControlObject::getControl(ConfigKey(m_sInternalClockGroup,
+                                              "beat_distance"))->get());
+    EXPECT_LT(difference, .00001);
 }

@@ -31,6 +31,7 @@
 #include "controlpushbutton.h"
 #include "control/controlbehavior.h"
 #include "util/debug.h"
+#include "util/math.h"
 
 WPushButton::WPushButton(QWidget* pParent)
         : WWidget(pParent),
@@ -59,9 +60,9 @@ void WPushButton::setup(QDomNode node, const SkinContext& context) {
     if (context.hasNode(node, "BackPath")) {
         QString mode_str = context.selectAttributeString(
                 context.selectElement(node, "BackPath"), "scalemode", "TILE");
-        QString backPath = context.getPixmapPath(context.selectNode(node, "BackPath"));
-        if (!backPath.isEmpty()) {
-            setPixmapBackground(backPath, Paintable::DrawModeFromString(mode_str));
+        PixmapSource backgroundSource = context.getPixmapSource(context.selectNode(node, "BackPath"));
+        if (!backgroundSource.isEmpty()) {
+            setPixmapBackground(backgroundSource, Paintable::DrawModeFromString(mode_str));
         }
     }
 
@@ -69,22 +70,27 @@ void WPushButton::setup(QDomNode node, const SkinContext& context) {
     QDomNode state = context.selectNode(node, "State");
     while (!state.isNull()) {
         if (state.isElement() && state.nodeName() == "State") {
-            int iState = context.selectInt(state, "Number");
+            // support for variables in State elements
+            SkinContext stateContext(context);
+            stateContext.updateVariables(state);
+
+            int iState = stateContext.selectInt(state, "Number");
             if (iState < m_iNoStates) {
-                QString pixmapPath;
-                
-                pixmapPath = context.getPixmapPath(context.selectNode(state, "Unpressed"));
-                if (!pixmapPath.isEmpty()) {
-                    setPixmap(iState, false, pixmapPath);
+
+                PixmapSource pixmapSource = stateContext.getPixmapSource(
+                    stateContext.selectNode(state, "Unpressed"));
+                if (!pixmapSource.isEmpty()) {
+                    setPixmap(iState, false, pixmapSource);
                 }
-                
-                pixmapPath = context.getPixmapPath(context.selectNode(state, "Pressed"));
-                if (!pixmapPath.isEmpty()) {
-                    setPixmap(iState, true, pixmapPath);
+
+                pixmapSource = stateContext.getPixmapSource(
+                    stateContext.selectNode(state, "Pressed"));
+                if (!pixmapSource.isEmpty()) {
+                    setPixmap(iState, true, pixmapSource);
                 }
-                
-                m_text.replace(iState, context.selectString(state, "Text"));
-                QString alignment = context.selectString(state, "Alignment");
+
+                m_text.replace(iState, stateContext.selectString(state, "Text"));
+                QString alignment = stateContext.selectString(state, "Alignment").toLower();
                 if (alignment == "left") {
                     m_align.replace(iState, Qt::AlignLeft);
                 } else if (alignment == "right") {
@@ -158,9 +164,10 @@ void WPushButton::setup(QDomNode node, const SkinContext& context) {
                     ControlObject::getControl(configKey));
             if (p) {
                 m_rightButtonMode = p->getButtonMode();
-                if (m_rightButtonMode != ControlPushButton::PUSH) {
+                if (m_rightButtonMode != ControlPushButton::PUSH &&
+                        m_rightButtonMode != ControlPushButton::TRIGGER) {
                     qWarning()
-                            << "WPushButton::setup: Connecting a Pushbutton not in PUSH mode is not implemented\n"
+                            << "WPushButton::setup: Connecting a Pushbutton not in PUSH or TRIGGER mode is not implemented\n"
                             << "Please set <RightClickIsPushButton>true</RightClickIsPushButton>";
                 }
             }
@@ -198,7 +205,7 @@ void WPushButton::setStates(int iStates) {
     m_align.resize(iStates);
 }
 
-void WPushButton::setPixmap(int iState, bool bPressed, const QString& filename) {
+void WPushButton::setPixmap(int iState, bool bPressed, PixmapSource source) {
     QVector<PaintablePointer>& pixmaps = bPressed ?
             m_pressedPixmaps : m_unpressedPixmaps;
 
@@ -206,13 +213,13 @@ void WPushButton::setPixmap(int iState, bool bPressed, const QString& filename) 
         return;
     }
 
-    PaintablePointer pPixmap = WPixmapStore::getPaintable(filename,
+    PaintablePointer pPixmap = WPixmapStore::getPaintable(source,
                                                           Paintable::STRETCH);
 
     if (pPixmap.isNull() || pPixmap->isNull()) {
         // Only log if it looks like the user tried to specify a pixmap.
-        if (!filename.isEmpty()) {
-            qDebug() << "WPushButton: Error loading pixmap:" << filename;
+        if (!source.isEmpty()) {
+            qDebug() << "WPushButton: Error loading pixmap:" << source.getPath();
         }
     } else {
         // Set size of widget equal to pixmap size
@@ -221,14 +228,14 @@ void WPushButton::setPixmap(int iState, bool bPressed, const QString& filename) 
     pixmaps.replace(iState, pPixmap);
 }
 
-void WPushButton::setPixmapBackground(const QString &filename,
+void WPushButton::setPixmapBackground(PixmapSource source,
                                       Paintable::DrawMode mode) {
     // Load background pixmap
-    m_pPixmapBack = WPixmapStore::getPaintable(filename, mode);
-    if (!filename.isEmpty() &&
+    m_pPixmapBack = WPixmapStore::getPaintable(source, mode);
+    if (!source.isEmpty() &&
             (m_pPixmapBack.isNull() || m_pPixmapBack->isNull())) {
         // Only log if it looks like the user tried to specify a pixmap.
-        qDebug() << "WPushButton: Error loading background pixmap:" << filename;
+        qDebug() << "WPushButton: Error loading background pixmap:" << source.getPath();
     }
 }
 
@@ -241,8 +248,11 @@ void WPushButton::onConnectedControlChanged(double dParameter, double dValue) {
     }
 
     double value = getControlParameterDisplay();
-    int idx = static_cast<int>(value) % m_iNoStates;
-    setProperty("displayValue", idx);
+    if (!isnan(value) && m_iNoStates > 0) {
+        int idx = static_cast<int>(value) % m_iNoStates;
+        emit(displayValueChanged(idx));
+    }
+
     // According to http://stackoverflow.com/a/3822243 this is the least
     // expensive way to restyle just this widget.
     // Since we expect button connections to not change at high frequency we
@@ -338,7 +348,10 @@ void WPushButton::mousePressEvent(QMouseEvent * e) {
             emitValue = 1.0;
         } else {
             // Toggle thru the states
-            emitValue = static_cast<int>(getControlParameterLeft() + 1.0) % m_iNoStates;
+            emitValue = getControlParameterLeft();
+            if (!isnan(emitValue) && m_iNoStates > 0) {
+                emitValue = static_cast<int>(emitValue + 1.0) % m_iNoStates;
+            }
             if (m_leftButtonMode == ControlPushButton::LONGPRESSLATCHING) {
                 m_clickTimer.setSingleShot(true);
                 m_clickTimer.start(ControlPushButtonBehavior::kLongPressLatchingTimeMillis);
@@ -404,7 +417,9 @@ void WPushButton::mouseReleaseEvent(QMouseEvent * e) {
             if (m_leftButtonMode == ControlPushButton::LONGPRESSLATCHING
                     && m_clickTimer.isActive() && emitValue >= 1.0) {
                 // revert toggle if button is released too early
-                emitValue = static_cast<int>(emitValue - 1.0) % m_iNoStates;
+                if (!isnan(emitValue) && m_iNoStates > 0) {
+                    emitValue = static_cast<int>(emitValue - 1.0) % m_iNoStates;
+                }
             } else {
                 // Nothing special happens when releasing a normal toggle button
             }

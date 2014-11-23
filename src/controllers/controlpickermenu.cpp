@@ -89,6 +89,8 @@ ControlPickerMenu::ControlPickerMenu(QWidget* pParent)
     addDeckAndSamplerControl("beats_translate_later", tr("Move Beatgrid Later"), tr("Adjust the beatgrid to the right"), bpmMenu);
     addDeckControl("beats_translate_curpos", tr("Adjust Beatgrid"),
                    tr("Align beatgrid to current position"), bpmMenu);
+    addDeckControl("beats_translate_match_alignment", tr("Adjust Beatgrid - Match Alignment"),
+                   tr("Adjust beatgrid to match another playing deck."), bpmMenu);
     addDeckAndSamplerControl("quantize", tr("Quantize Mode"), tr("Toggle quantize mode"), bpmMenu);
 
     QMenu* syncMenu = addSubmenu(tr("Sync"));
@@ -367,7 +369,7 @@ ControlPickerMenu::ControlPickerMenu(QWidget* pParent)
 
     const int kNumEffectRacks = 1;
     for (int iRackNumber = 1; iRackNumber <= kNumEffectRacks; ++iRackNumber) {
-        const QString rackGroup = EffectRack::formatGroupString(
+        const QString rackGroup = StandardEffectRack::formatGroupString(
                 iRackNumber - 1);
         QMenu* rackMenu = addSubmenu(m_effectRackStr.arg(iRackNumber), effectsMenu);
         QString descriptionPrefix = m_effectRackStr.arg(iRackNumber);
@@ -380,8 +382,9 @@ ControlPickerMenu::ControlPickerMenu(QWidget* pParent)
             ConfigKey(rackGroup, "num_effectunits"));
         for (int iEffectUnitNumber = 1; iEffectUnitNumber <= numEffectUnits;
              ++iEffectUnitNumber) {
-            const QString effectUnitGroup = EffectChainSlot::formatGroupString(
-                    iRackNumber - 1, iEffectUnitNumber - 1);
+            const QString effectUnitGroup =
+                    StandardEffectRack::formatEffectChainSlotGroupString(
+                        iRackNumber - 1, iEffectUnitNumber - 1);
 
             descriptionPrefix = QString("%1, %2").arg(m_effectRackStr.arg(iRackNumber),
                                                       m_effectUnitStr.arg(iEffectUnitNumber));
@@ -507,9 +510,10 @@ ControlPickerMenu::ControlPickerMenu(QWidget* pParent)
                     ConfigKey(effectUnitGroup, "num_effectslots"));
             for (int iEffectSlotNumber = 1; iEffectSlotNumber <= numEffectSlots;
                      ++iEffectSlotNumber) {
-                const QString effectSlotGroup = EffectSlot::formatGroupString(
-                        iRackNumber - 1, iEffectUnitNumber - 1,
-                        iEffectSlotNumber - 1);
+                const QString effectSlotGroup =
+                        StandardEffectRack::formatEffectSlotGroupString(
+                            iRackNumber - 1, iEffectUnitNumber - 1,
+                            iEffectSlotNumber - 1);
 
                 QMenu* effectSlotMenu = addSubmenu(m_effectStr.arg(iEffectSlotNumber),
                                                    effectUnitMenu);
@@ -544,9 +548,12 @@ ControlPickerMenu::ControlPickerMenu(QWidget* pParent)
                         ConfigKey(effectSlotGroup, "num_parameterslots"));
                 for (int iParameterSlotNumber = 1; iParameterSlotNumber <= numParameterSlots;
                      ++iParameterSlotNumber) {
-                    const QString parameterSlotGroup = EffectParameterSlot::formatGroupString(
-                            iRackNumber - 1, iEffectUnitNumber - 1,
-                            iEffectSlotNumber - 1);
+                    // The parameter slot group is the same as the effect slot
+                    // group on a standard effect rack.
+                    const QString parameterSlotGroup =
+                            StandardEffectRack::formatEffectSlotGroupString(
+                                iRackNumber - 1, iEffectUnitNumber - 1,
+                                iEffectSlotNumber - 1);
                     const QString parameterSlotItemPrefix = EffectParameterSlot::formatItemPrefix(
                             iParameterSlotNumber - 1);
                     QMenu* parameterSlotMenu = addSubmenu(
@@ -574,28 +581,6 @@ ControlPickerMenu::ControlPickerMenu(QWidget* pParent)
             }
         }
     }
-
-    /* DEPRECATED EFFECTS
-    addDeckControl("flanger",
-                   tr("Flange Toggle"),
-                   tr("Toggle flange effect"),
-                   effectsMenu);
-    addControl("[Flanger]", "lfoPeriod",
-               tr("Flange Wavelength/Period"),
-               tr("Flange effect: Wavelength/period"), effectsMenu, true);
-    addControl("[Flanger]", "lfoDepth",
-               tr("Flange Intensity"),
-               tr("Flange effect: Intensity"), effectsMenu, true);
-    addControl("[Flanger]", "lfoDelay",
-               tr("Flange Phase Delay"),
-               tr("Flange effect: Phase delay"), effectsMenu, true);
-    addDeckControl("filter",
-                   tr("Filter Toggle"),
-                   tr("Toggle filter effect"), effectsMenu);
-    addDeckControl("filterDepth",
-                   tr("Filter Intensity"),
-                   tr("Filter effect: Intensity"), effectsMenu, true);
-    */
 
     // Microphone Controls
     QMenu* microphoneMenu = addSubmenu(tr("Microphone / Auxiliary"));
@@ -685,6 +670,9 @@ ControlPickerMenu::ControlPickerMenu(QWidget* pParent)
     addControl("[PreviewDeck]", "show_previewdeck",
                tr("Preview Deck Show/Hide"),
                tr("Show/hide the preview deck"), guiMenu);
+    addControl("[Library]", "show_coverart",
+               tr("Cover Art Show/Hide"),
+               tr("Show/hide cover art"), guiMenu);
 
     const int iNumDecks = ControlObject::get(ConfigKey("[Master]", "num_decks"));
     QString spinnyTitle = tr("Vinyl Spinner Show/Hide");

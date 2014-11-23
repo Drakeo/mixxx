@@ -140,6 +140,10 @@ void Tooltips::addStandardTooltips() {
             << tr("Preview Deck")
             << tr("Show/hide the Preview deck.");
 
+    add("show_coverart")
+            << tr("Cover Art")
+            << tr("Show/hide Cover Art.");
+
     add("microphone_volume")
             << tr("Microphone Volume")
             << tr("Adjusts the microphone volume.")
@@ -248,7 +252,8 @@ void Tooltips::addStandardTooltips() {
 
     add("beats_translate_curpos")
             << tr("Adjust Beatgrid")
-            << tr("Adjust beatgrid so the closest beat is aligned with the current play position.");
+            << QString("%1: %2").arg(leftClick, tr("Adjust beatgrid so the closest beat is aligned with the current play position."))
+            << QString("%1: %2").arg(rightClick, tr("Adjust beatgrid to match another playing deck."));
 
     add("keylock")
             << tr("Key-Lock")
@@ -485,4 +490,13 @@ void Tooltips::addStandardTooltips() {
     add("audio_latency_overload")
             << tr("Audio Latency Overload Indicator")
             << tr("Indicates that the audio buffer is too small to do all audio processing.");
+
+    add("coverart")
+            << tr("Cover Art")
+            << tr("Displays cover artwork of the loaded track.")
+            << QString("%1: %2").arg(rightClick, tr("Displays options for editing cover artwork."));
+
+    add("starrating")
+            << tr("Star Rating")
+            << tr("Assign ratings to individual tracks by clicking the stars.");
 }

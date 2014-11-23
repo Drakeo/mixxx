@@ -150,6 +150,7 @@ void TraktorFeature::activate() {
     }
 
     emit(showTrackModel(m_pTraktorTableModel));
+    emit(enableCoverArtDisplay(false));
 }
 
 void TraktorFeature::activateChild(const QModelIndex& index) {
@@ -163,6 +164,7 @@ void TraktorFeature::activateChild(const QModelIndex& index) {
         qDebug() << "Activate Traktor Playlist: " << item->dataPath().toString();
         m_pTraktorPlaylistModel->setPlaylist(item->dataPath().toString());
         emit(showTrackModel(m_pTraktorPlaylistModel));
+        emit(enableCoverArtDisplay(false));
     }
 }
 
@@ -206,7 +208,7 @@ TreeItem* TraktorFeature::importLibrary(QString file) {
                 inCollectionTag = true;
             }
             // Each "ENTRY" tag in <COLLECTION> represents a track
-            if (inCollectionTag && xml.name() == "ENTRY" ) {
+            if (inCollectionTag && xml.name() == "ENTRY") {
                 //parse track
                 parseTrack(xml, query);
                 ++nAudioFiles; //increment number of files in the music collection
