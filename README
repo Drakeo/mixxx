@@ -41,7 +41,7 @@ Mixxx has the following dependencies:
 - libflac
 - libshout
 - libhss1394
-- taglib
+- taglib-1.9
 - PortAudio-v19
 - portmidi
 - QT 4.6+
