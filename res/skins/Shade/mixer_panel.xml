@@ -568,27 +568,66 @@
 							<TooltipId>time</TooltipId>
 							<Style>
 								QLabel {
-									font: bold 10px/12px Lucida Grande, Lucida Sans Unicode, Arial, Verdana, sans-serif;
-									background-color: transparent; color: #191F24; text-align:center;
+									font: bold 9px sans-serif;
+									font-family: "Open Sans";
+									background-color: transparent; 
+									color: #191F24; 
+									text-align:center;
 								}
 							</Style>
-							<Pos>113,15</Pos>
+							<Pos>114,15</Pos>
+							<CustomFormat>hh:mm</CustomFormat>
 							<ShowSeconds>false</ShowSeconds>
 						</Time>
+						
+						<StatusLight>
+							<Pos>113,27</Pos>
+							<TooltipId>audio_latency_usage</TooltipId>
+							<Style>
+							</Style>
+							<PathStatusLight>audio_latency/audio_latency_overload.png</PathStatusLight>
+							<PathBack>audio_latency/audio_latency_overload_back.png</PathBack>
+							<Connection>
+								<ConfigKey>[Master],audio_latency_overload</ConfigKey>
+							</Connection>
+						</StatusLight>
+        				
+						<VuMeter>
+				            <Pos>113,28</Pos>
+				            <Style>
+								WVuMeter {
+									background-color: #626f87;
+								}
+							</Style>
+							<TooltipId>audio_latency_usage</TooltipId>
+							<MinimumSize>26,1</MinimumSize>
+							<MaximumSize>26,1</MaximumSize>
+							<PathVu>audio_latency/audio_latency_usage.png</PathVu>
+							<PeakHoldSize>26</PeakHoldSize>
+							<PeakHoldTime>500</PeakHoldTime>
+							<PeakFallTime>50</PeakFallTime>
+							<PeakFallStep>1</PeakFallStep>
+							<Horizontal>true</Horizontal>
+							<Connection>
+								<ConfigKey>[Master],audio_latency_usage</ConfigKey>
+							</Connection>
+						</VuMeter>
+						
+
 
 						<!--
 						**********************************************
-						RotaryFader- Master volume & balance
+						RotaryFader- Master gain & balance
 						**********************************************
 						-->
 						<Knob>
-							<TooltipId>master_volume</TooltipId>
+							<TooltipId>master_gain</TooltipId>
 							<Style></Style>
 							<NumberStates>64</NumberStates>
-							<Path>knobs_no_center/knob_rotary_s%1.png</Path>
+							<Path>knobs/knob_rotary_s%1.png</Path>
 							<Pos>208,15</Pos>
 							<Connection>
-								<ConfigKey>[Master],volume</ConfigKey>
+								<ConfigKey>[Master],gain</ConfigKey>
 							</Connection>
 						</Knob>
 						<Knob>
@@ -608,13 +647,13 @@
 						**********************************************
 						-->
 						<Knob>
-							<TooltipId>headphone_volume</TooltipId>
+							<TooltipId>headphone_gain</TooltipId>
 							<Style></Style>
 							<NumberStates>64</NumberStates>
 							<Path>knobs_no_center/knob_rotary_s%1.png</Path>
 							<Pos>20,15</Pos>
 							<Connection>
-								<ConfigKey>[Master],headVolume</ConfigKey>
+								<ConfigKey>[Master],headGain</ConfigKey>
 							</Connection>
 						</Knob>
 						<Knob>
@@ -645,7 +684,7 @@
 							<Path>knobs/knob_rotary_s%1.png</Path>
 							<Pos>65,51</Pos>
 							<Connection>
-								<ConfigKey>[EffectRack1_EffectUnit1],parameter</ConfigKey>
+								<ConfigKey>[EffectRack1_EffectUnit1],super1</ConfigKey>
 							</Connection>
 						</Knob>
 						<Knob>
@@ -655,7 +694,7 @@
 							<Path>knobs/knob_rotary_s%1.png</Path>
 							<Pos>163,51</Pos>
 							<Connection>
-								<ConfigKey>[EffectRack1_EffectUnit2],parameter</ConfigKey>
+								<ConfigKey>[EffectRack1_EffectUnit2],super1</ConfigKey>
 							</Connection>
 						</Knob>
 						<Knob>

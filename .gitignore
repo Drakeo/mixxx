@@ -15,6 +15,7 @@
 .sconsign.dblite
 *.sqlite
 *.cfg
+!/res/keyboard/*.cfg
 cache
 lib/*/*.a
 lib/*/lib/*.a

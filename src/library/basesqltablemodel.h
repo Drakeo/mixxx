@@ -29,7 +29,7 @@ class BaseSqlTableModel : public QAbstractTableModel, public TrackModel {
     //  m_database, m_pTrackCollection, m_trackDAO
 
     virtual bool isColumnInternal(int column) = 0;
-    virtual bool isColumnHiddenByDefault(int column) = 0;
+    virtual bool isColumnHiddenByDefault(int column);
     virtual TrackModel::CapabilitiesFlags getCapabilities() const = 0;
 
     // functions that can be implemented
@@ -57,7 +57,6 @@ class BaseSqlTableModel : public QAbstractTableModel, public TrackModel {
     int fieldIndex(ColumnCache::Column column) const;
     int fieldIndex(const QString& fieldName) const;
 
-    void select();
     QString getTrackLocation(const QModelIndex& index) const;
     QAbstractItemDelegate* delegateForColumn(const int i, QObject* pParent);
 
@@ -68,10 +67,13 @@ class BaseSqlTableModel : public QAbstractTableModel, public TrackModel {
     bool setData(const QModelIndex& index, const QVariant& value, int role = Qt::EditRole);
     int columnCount(const QModelIndex& parent = QModelIndex()) const;
     bool setHeaderData(int section, Qt::Orientation orientation,
-                       const QVariant &value, int role = Qt::EditRole);
+                       const QVariant &value, int role = Qt::DisplayRole);
     QVariant headerData(int section, Qt::Orientation orientation,
                         int role=Qt::DisplayRole) const;
     virtual QMimeData* mimeData(const QModelIndexList &indexes) const;
+
+  public slots:
+    void select();
 
   protected:
     // Returns the row of trackId in this result set. If trackId is not present,
@@ -100,6 +102,10 @@ class BaseSqlTableModel : public QAbstractTableModel, public TrackModel {
     void refreshCell(int row, int column);
 
   private:
+    // A simple helper function for initializing header title and width.  Note
+    // that the ideal width of a column is based on the width of its data,
+    // not the title string itself.
+    void setHeaderProperties(ColumnCache::Column column, QString title, int defaultWidth);
     inline void setTrackValueForColumn(TrackPointer pTrack, int column, QVariant value);
     QVariant getBaseValue(const QModelIndex& index, int role = Qt::DisplayRole) const;
     // Set the columns used for searching. Names must correspond to the column

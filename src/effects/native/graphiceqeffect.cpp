@@ -18,6 +18,7 @@ EffectManifest GraphicEQEffect::getManifest() {
     manifest.setDescription(QObject::tr(
         "An 8 band Graphic EQ based on Biquad Filters"));
     manifest.setEffectRampsFromDry(true);
+    manifest.setIsMasterEQ(true);
 
     // Display rounded center frequencies for each filter
     float centerFrequencies[8] = {45, 100, 220, 500, 1100, 2500,
@@ -105,6 +106,9 @@ GraphicEQEffectGroupState::~GraphicEQEffectGroupState() {
         delete filter;
     }
 
+    delete m_low;
+    delete m_high;
+
     foreach(CSAMPLE* buf, m_pBufs) {
         SampleUtil::free(buf);
     }
@@ -135,14 +139,14 @@ GraphicEQEffect::GraphicEQEffect(EngineEffect* pEffect,
 GraphicEQEffect::~GraphicEQEffect() {
 }
 
-void GraphicEQEffect::processGroup(const QString& group,
-                                   GraphicEQEffectGroupState* pState,
-                                   const CSAMPLE* pInput, CSAMPLE* pOutput,
-                                   const unsigned int numSamples,
-                                   const unsigned int sampleRate,
-                                   const EffectProcessor::EnableState enableState,
-                                   const GroupFeatureState& groupFeatures) {
-    Q_UNUSED(group);
+void GraphicEQEffect::processChannel(const ChannelHandle& handle,
+                                     GraphicEQEffectGroupState* pState,
+                                     const CSAMPLE* pInput, CSAMPLE* pOutput,
+                                     const unsigned int numSamples,
+                                     const unsigned int sampleRate,
+                                     const EffectProcessor::EnableState enableState,
+                                     const GroupFeatureState& groupFeatures) {
+    Q_UNUSED(handle);
     Q_UNUSED(groupFeatures);
 
     // If the sample rate has changed, initialize the filters using the new

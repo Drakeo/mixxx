@@ -2,6 +2,7 @@
 #include <QApplication>
 #include <QUrl>
 #include <QMimeData>
+#include <QStylePainter>
 
 #include "controlobject.h"
 #include "controlobjectthread.h"
@@ -15,10 +16,16 @@
 #include "widget/wspinny.h"
 #include "wimagestore.h"
 
-WSpinny::WSpinny(QWidget* parent, VinylControlManager* pVCMan)
-        : QGLWidget(parent, SharedGLContext::getWidget()),
+// The SampleBuffers format enables antialiasing.
+WSpinny::WSpinny(QWidget* parent, const QString& group,
+                 ConfigObject<ConfigValue>* pConfig,
+                 VinylControlManager* pVCMan)
+        : QGLWidget(QGLFormat(QGL::SampleBuffers), parent, SharedGLContext::getWidget()),
           WBaseWidget(this),
+          m_group(group),
+          m_pConfig(pConfig),
           m_pBgImage(NULL),
+          m_pMaskImage(NULL),
           m_pFgImage(NULL),
           m_pGhostImage(NULL),
           m_pPlay(NULL),
@@ -76,28 +83,29 @@ WSpinny::~WSpinny() {
 #ifdef __VINYLCONTROL__
     m_pVCManager->removeSignalQualityListener(this);
 #endif
-    // No need to delete anything if m_group is empty because setup() was not called.
-    if (!m_group.isEmpty()) {
-        WImageStore::deleteImage(m_pBgImage);
-        WImageStore::deleteImage(m_pFgImage);
-        WImageStore::deleteImage(m_pGhostImage);
-        delete m_pPlay;
-        delete m_pPlayPos;
-        delete m_pTrackSamples;
-        delete m_pTrackSampleRate;
-        delete m_pScratchToggle;
-        delete m_pScratchPos;
-        delete m_pSlipEnabled;
-    #ifdef __VINYLCONTROL__
-        delete m_pVinylControlSpeedType;
-        delete m_pVinylControlEnabled;
-        delete m_pSignalEnabled;
-    #endif
-    }
+    WImageStore::deleteImage(m_pBgImage);
+    WImageStore::deleteImage(m_pMaskImage);
+    WImageStore::deleteImage(m_pFgImage);
+    WImageStore::deleteImage(m_pGhostImage);
+    delete m_pPlay;
+    delete m_pPlayPos;
+    delete m_pTrackSamples;
+    delete m_pTrackSampleRate;
+    delete m_pScratchToggle;
+    delete m_pScratchPos;
+    delete m_pSlipEnabled;
+#ifdef __VINYLCONTROL__
+    delete m_pVinylControlSpeedType;
+    delete m_pVinylControlEnabled;
+    delete m_pSignalEnabled;
+#endif
 }
 
 void WSpinny::onVinylSignalQualityUpdate(const VinylSignalQualityReport& report) {
 #ifdef __VINYLCONTROL__
+    if (!m_bVinylActive || !m_bSignalActive) {
+        return;
+    }
     // Skip reports for vinyl inputs we don't care about.
     if (report.processor != m_iVinylInput) {
         return;
@@ -128,22 +136,33 @@ void WSpinny::onVinylSignalQualityUpdate(const VinylSignalQualityReport& report)
 #endif
 }
 
-void WSpinny::setup(QDomNode node, const SkinContext& context, QString group) {
-    m_group = group;
-
+void WSpinny::setup(QDomNode node, const SkinContext& context) {
     // Set images
-    m_pBgImage = WImageStore::getImage(context.getPixmapSource(
-                        context.selectNode(node, "PathBackground")));
+    QDomElement backPathElement = context.selectElement(node, "PathBackground");
+    m_pBgImage = WImageStore::getImage(context.getPixmapSource(backPathElement));
+    Paintable::DrawMode bgmode = context.selectScaleMode(backPathElement,
+                                                         Paintable::FIXED);
+    if (m_pBgImage && !m_pBgImage->isNull() && bgmode == Paintable::FIXED) {
+        setFixedSize(m_pBgImage->size());
+    } else {
+        setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::MinimumExpanding);
+    }
+    m_pMaskImage = WImageStore::getImage(context.getPixmapSource(
+                        context.selectNode(node, "PathMask")));
     m_pFgImage = WImageStore::getImage(context.getPixmapSource(
                         context.selectNode(node,"PathForeground")));
+    if (m_pFgImage && !m_pFgImage->isNull()) {
+        m_fgImageScaled = m_pFgImage->scaled(
+                size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    }
     m_pGhostImage = WImageStore::getImage(context.getPixmapSource(
                         context.selectNode(node,"PathGhost")));
-
-    if (m_pBgImage && !m_pBgImage->isNull()) {
-        setFixedSize(m_pBgImage->size());
+    if (m_pGhostImage && !m_pGhostImage->isNull()) {
+        m_ghostImageScaled = m_pGhostImage->scaled(
+                size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
     }
 
-    m_bShowCover = context.selectBool(node, "ShowCover", true);
+    m_bShowCover = context.selectBool(node, "ShowCover", false);
 
 #ifdef __VINYLCONTROL__
     // Find the vinyl input we should listen to reports about.
@@ -157,28 +176,28 @@ void WSpinny::setup(QDomNode node, const SkinContext& context, QString group) {
 #endif
 
     m_pPlay = new ControlObjectThread(
-            group, "play");
+            m_group, "play");
     m_pPlayPos = new ControlObjectThread(
-            group, "playposition");
-    m_pVisualPlayPos = VisualPlayPosition::getVisualPlayPosition(group);
+            m_group, "playposition");
+    m_pVisualPlayPos = VisualPlayPosition::getVisualPlayPosition(m_group);
     m_pTrackSamples = new ControlObjectThread(
-            group, "track_samples");
+            m_group, "track_samples");
     m_pTrackSampleRate = new ControlObjectThread(
-            group, "track_samplerate");
+            m_group, "track_samplerate");
 
     m_pScratchToggle = new ControlObjectThread(
-            group, "scratch_position_enable");
+            m_group, "scratch_position_enable");
     m_pScratchPos = new ControlObjectThread(
-            group, "scratch_position");
+            m_group, "scratch_position");
 
     m_pSlipEnabled = new ControlObjectThread(
-            group, "slip_enabled");
+            m_group, "slip_enabled");
     connect(m_pSlipEnabled, SIGNAL(valueChanged(double)),
             this, SLOT(updateSlipEnabled(double)));
 
 #ifdef __VINYLCONTROL__
     m_pVinylControlSpeedType = new ControlObjectThread(
-            group, "vinylcontrol_speed_type");
+            m_group, "vinylcontrol_speed_type");
     if (m_pVinylControlSpeedType)
     {
         //Initialize the rotational speed.
@@ -186,12 +205,12 @@ void WSpinny::setup(QDomNode node, const SkinContext& context, QString group) {
     }
 
     m_pVinylControlEnabled = new ControlObjectThread(
-            group, "vinylcontrol_enabled");
+            m_group, "vinylcontrol_enabled");
     connect(m_pVinylControlEnabled, SIGNAL(valueChanged(double)),
             this, SLOT(updateVinylControlEnabled(double)));
 
     m_pSignalEnabled = new ControlObjectThread(
-            group, "vinylcontrol_signal_enabled");
+            m_group, "vinylcontrol_signal_enabled");
     connect(m_pSignalEnabled, SIGNAL(valueChanged(double)),
             this, SLOT(updateVinylControlSignalEnabled(double)));
 
@@ -283,15 +302,27 @@ void WSpinny::paintEvent(QPaintEvent *e) {
     Q_UNUSED(e); //ditch unused param warning
     m_bWidgetDirty = false;
 
-    QPainter p(this);
+    QStyleOption option;
+    option.initFrom(this);
+    QStylePainter p(this);
+    p.setRenderHint(QPainter::Antialiasing);
+    p.setRenderHint(QPainter::HighQualityAntialiasing);
     p.setRenderHint(QPainter::SmoothPixmapTransform);
-
-    if (m_bShowCover && !m_loadedCoverScaled.isNull()) {
-        p.drawPixmap(0, 0, m_loadedCoverScaled);
-    }
+    p.drawPrimitive(QStyle::PE_Widget, option);
 
     if (m_pBgImage) {
-        p.drawImage(0, 0, *m_pBgImage);
+        p.drawImage(rect(), *m_pBgImage, m_pBgImage->rect());
+    }
+
+    if (m_bShowCover && !m_loadedCoverScaled.isNull()) {
+        // Some covers aren't square, so center them.
+        int x = (width() - m_loadedCoverScaled.width()) / 2;
+        int y = (height() - m_loadedCoverScaled.height()) / 2;
+        p.drawPixmap(x, y, m_loadedCoverScaled);
+    }
+
+    if (m_pMaskImage) {
+        p.drawImage(rect(), *m_pMaskImage, m_pMaskImage->rect());
     }
 
 #ifdef __VINYLCONTROL__
@@ -307,8 +338,6 @@ void WSpinny::paintEvent(QPaintEvent *e) {
     // the origin is at the center of the image. We then rotate the coordinate system,
     // and draw the image at the corner.
     p.translate(width() / 2, height() / 2);
-
-
 
     if (m_bGhostPlayback) {
         p.save();
@@ -327,16 +356,16 @@ void WSpinny::paintEvent(QPaintEvent *e) {
     if (m_pFgImage && !m_pFgImage->isNull()) {
         // Now rotate the image and draw it on the screen.
         p.rotate(m_fAngle);
-        p.drawImage(-(m_pFgImage->width() / 2),
-                -(m_pFgImage->height() / 2), *m_pFgImage);
+        p.drawImage(-(m_fgImageScaled.width() / 2),
+                    -(m_fgImageScaled.height() / 2), m_fgImageScaled);
     }
 
     if (m_bGhostPlayback && m_pGhostImage && !m_pGhostImage->isNull()) {
         p.restore();
         p.save();
         p.rotate(m_fGhostAngle);
-        p.drawImage(-(m_pGhostImage->width() / 2),
-                -(m_pGhostImage->height() / 2), *m_pGhostImage);
+        p.drawImage(-(m_ghostImageScaled.width() / 2),
+                    -(m_ghostImageScaled.height() / 2), m_ghostImageScaled);
 
         //Rotate back to the playback position (not the ghost positon),
         //and draw the beat marks from there.
@@ -353,6 +382,14 @@ QPixmap WSpinny::scaledCoverArt(const QPixmap& normal) {
 
 void WSpinny::resizeEvent(QResizeEvent*) {
     m_loadedCoverScaled = scaledCoverArt(m_loadedCover);
+    if (m_pFgImage && !m_pFgImage->isNull()) {
+        m_fgImageScaled = m_pFgImage->scaled(
+                size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    }
+    if (m_pGhostImage && !m_pGhostImage->isNull()) {
+        m_ghostImageScaled = m_pGhostImage->scaled(
+                size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    }
 }
 
 /* Convert between a normalized playback position (0.0 - 1.0) and an angle
@@ -600,30 +637,22 @@ bool WSpinny::event(QEvent* pEvent) {
     return QGLWidget::event(pEvent);
 }
 
-/** DRAG AND DROP **/
-void WSpinny::dragEnterEvent(QDragEnterEvent * event)
-{
-    // Accept the enter event if the thing is a filepath and nothing's playing
-    // in this deck.
-    if (event->mimeData()->hasUrls()) {
-        if (m_pPlay && m_pPlay->get()) {
-            event->ignore();
-        } else {
-            QList<QFileInfo> files = DragAndDropHelper::supportedTracksFromUrls(
-                event->mimeData()->urls(), true, false);
-            if (!files.isEmpty()) {
-                event->acceptProposedAction();
-                return;
-            }
-        }
+void WSpinny::dragEnterEvent(QDragEnterEvent* event) {
+    if (DragAndDropHelper::allowLoadToPlayer(m_group, m_pPlay->get() > 0.0,
+                                             m_pConfig) &&
+            DragAndDropHelper::dragEnterAccept(*event->mimeData(), m_group,
+                                               true, false)) {
+        event->acceptProposedAction();
+    } else {
+        event->ignore();
     }
-    event->ignore();
 }
 
 void WSpinny::dropEvent(QDropEvent * event) {
-    if (event->mimeData()->hasUrls()) {
-        QList<QFileInfo> files = DragAndDropHelper::supportedTracksFromUrls(
-                event->mimeData()->urls(), true, false);
+    if (DragAndDropHelper::allowLoadToPlayer(m_group, m_pPlay->get() > 0.0,
+                                             m_pConfig)) {
+        QList<QFileInfo> files = DragAndDropHelper::dropEventFiles(
+                *event->mimeData(), m_group, true, false);
         if (!files.isEmpty()) {
             event->accept();
             emit(trackDropped(files.at(0).canonicalFilePath(), m_group));

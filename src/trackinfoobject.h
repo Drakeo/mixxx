@@ -36,9 +36,9 @@
 #include "track/beats.h"
 #include "track/keys.h"
 #include "util/sandbox.h"
+#include "waveform/waveform.h"
 
 class Cue;
-class Waveform;
 
 class TrackInfoObject;
 typedef QSharedPointer<TrackInfoObject> TrackPointer;
@@ -223,12 +223,11 @@ class TrackInfoObject : public QObject {
     // Set URL for track
     void setURL(const QString& url);
 
-    Waveform* getWaveform();
-    void waveformNew();
+    ConstWaveformPointer getWaveform();
+    void setWaveform(ConstWaveformPointer pWaveform);
 
-    Waveform* getWaveformSummary();
-    const Waveform* getWaveformSummary() const;
-    void waveformSummaryNew();
+    ConstWaveformPointer getWaveformSummary() const;
+    void setWaveformSummary(ConstWaveformPointer pWaveform);
 
     void setAnalyserProgress(int progress);
     int getAnalyserProgress() const;
@@ -274,6 +273,15 @@ class TrackInfoObject : public QObject {
     void setCoverArt(const CoverArt& cover);
     CoverArt getCoverArt() const;
 
+    // Called when the shared pointer reference count for a library TrackPointer
+    // drops to zero.
+    static void onTrackReferenceExpired(TrackInfoObject* pTrack);
+
+    // Set whether the track should delete itself when its reference count drops
+    // to zero. This happens during shutdown when TrackDAO has already been
+    // destroyed.
+    void setDeleteOnReferenceExpiration(bool deleteOnReferenceExpiration);
+
   public slots:
     void slotCueUpdated();
 
@@ -291,9 +299,7 @@ class TrackInfoObject : public QObject {
     void changed(TrackInfoObject* pTrack);
     void dirty(TrackInfoObject* pTrack);
     void clean(TrackInfoObject* pTrack);
-    // The deleted signal is emitted in TIO's destructor.  Any connections
-    // to this signal *must* be Qt::DirectConnection or risk segfaults.
-    void deleted(TrackInfoObject* pTrack);
+    void referenceExpired(TrackInfoObject* pTrack);
 
   private slots:
     void slotBeatsUpdated();
@@ -312,10 +318,13 @@ class TrackInfoObject : public QObject {
     // TIO local methods or the TrackDAO.
     void setDirty(bool bDirty);
 
-
     // Set a unique identifier for the track. Only used by services like
     // TrackDAO
     void setId(int iId);
+
+    // Whether the track should delete itself when its reference count drops to
+    // zero. Used for cleaning up after shutdown.
+    volatile bool m_bDeleteOnReferenceExpiration;
 
     // Flag that indicates whether or not the TIO has changed. This is used by
     // TrackDAO to determine whether or not to write the Track back.
@@ -396,14 +405,15 @@ class TrackInfoObject : public QObject {
     BeatsPointer m_pBeats;
 
     //Visual waveform data
-    Waveform* const m_waveform;
-    Waveform* const m_waveformSummary;
+    ConstWaveformPointer m_waveform;
+    ConstWaveformPointer m_waveformSummary;
 
     QAtomicInt m_analyserProgress; // in 0.1%
 
     CoverArt m_coverArt;
 
     friend class TrackDAO;
+    friend class AutoDJProcessorTest;
 };
 
 #endif

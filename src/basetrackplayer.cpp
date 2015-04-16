@@ -16,15 +16,19 @@
 #include "util/sandbox.h"
 #include "effects/effectsmanager.h"
 
-BaseTrackPlayer::BaseTrackPlayer(QObject* pParent,
-                                 ConfigObject<ConfigValue>* pConfig,
-                                 EngineMaster* pMixingEngine,
-                                 EffectsManager* pEffectsManager,
-                                 EngineChannel::ChannelOrientation defaultOrientation,
-                                 QString group,
-                                 bool defaultMaster,
-                                 bool defaultHeadphones)
-        : BasePlayer(pParent, group),
+BaseTrackPlayer::BaseTrackPlayer(QObject* pParent, const QString& group)
+        : BasePlayer(pParent, group) {
+}
+
+BaseTrackPlayerImpl::BaseTrackPlayerImpl(QObject* pParent,
+                                         ConfigObject<ConfigValue>* pConfig,
+                                         EngineMaster* pMixingEngine,
+                                         EffectsManager* pEffectsManager,
+                                         EngineChannel::ChannelOrientation defaultOrientation,
+                                         QString group,
+                                         bool defaultMaster,
+                                         bool defaultHeadphones)
+        : BaseTrackPlayer(pParent, group),
           m_pConfig(pConfig),
           m_pLoadedTrack(),
           m_pLowFilter(NULL),
@@ -33,18 +37,20 @@ BaseTrackPlayer::BaseTrackPlayer(QObject* pParent,
           m_pLowFilterKill(NULL),
           m_pMidFilterKill(NULL),
           m_pHighFilterKill(NULL),
+          m_pSpeed(NULL),
+          m_pPitchAdjust(NULL),
           m_replaygainPending(false) {
-    m_pChannel = new EngineDeck(getGroup(), pConfig, pMixingEngine,
+    ChannelHandleAndGroup channelGroup =
+            pMixingEngine->registerChannelGroup(group);
+    m_pChannel = new EngineDeck(channelGroup, pConfig, pMixingEngine,
                                 pEffectsManager, defaultOrientation);
 
     EngineBuffer* pEngineBuffer = m_pChannel->getEngineBuffer();
     pMixingEngine->addChannel(m_pChannel);
 
     // Set the routing option defaults for the master and headphone mixes.
-    {
-        ControlObject::set(ConfigKey(getGroup(), "master"), (double)defaultMaster);
-        ControlObject::set(ConfigKey(getGroup(), "pfl"), (double)defaultHeadphones);
-    }
+    m_pChannel->setMaster(defaultMaster);
+    m_pChannel->setPfl(defaultHeadphones);
 
     // Connect our signals and slots with the EngineBuffer's signals and
     // slots. This will let us know when the reader is done loading a track, and
@@ -90,8 +96,7 @@ BaseTrackPlayer::BaseTrackPlayer(QObject* pParent,
             this, SLOT(slotPlayToggled(double)));
 }
 
-BaseTrackPlayer::~BaseTrackPlayer()
-{
+BaseTrackPlayerImpl::~BaseTrackPlayerImpl() {
     if (m_pLoadedTrack) {
         emit(unloadingTrack(m_pLoadedTrack));
         disconnect(m_pLoadedTrack.data(), 0, m_pBPM, 0);
@@ -116,9 +121,11 @@ BaseTrackPlayer::~BaseTrackPlayer()
     delete m_pMidFilterKill;
     delete m_pHighFilterKill;
     delete m_pPreGain;
+    delete m_pSpeed;
+    delete m_pPitchAdjust;
 }
 
-void BaseTrackPlayer::slotLoadTrack(TrackPointer track, bool bPlay) {
+void BaseTrackPlayerImpl::slotLoadTrack(TrackPointer track, bool bPlay) {
     // Before loading the track, ensure we have access. This uses lazy
     // evaluation to make sure track isn't NULL before we dereference it.
     if (!track.isNull() && !Sandbox::askForAccess(track->getCanonicalLocation())) {
@@ -166,23 +173,26 @@ void BaseTrackPlayer::slotLoadTrack(TrackPointer track, bool bPlay) {
     }
 
     m_pLoadedTrack = track;
+    if (m_pLoadedTrack) {
+        // Listen for updates to the file's BPM
+        connect(m_pLoadedTrack.data(), SIGNAL(bpmUpdated(double)),
+                m_pBPM, SLOT(slotSet(double)));
 
-    // Listen for updates to the file's BPM
-    connect(m_pLoadedTrack.data(), SIGNAL(bpmUpdated(double)),
-            m_pBPM, SLOT(slotSet(double)));
+        connect(m_pLoadedTrack.data(), SIGNAL(keyUpdated(double)),
+                m_pKey, SLOT(slotSet(double)));
 
-    connect(m_pLoadedTrack.data(), SIGNAL(keyUpdated(double)),
-            m_pKey, SLOT(slotSet(double)));
-
-    // Listen for updates to the file's Replay Gain
-    connect(m_pLoadedTrack.data(), SIGNAL(ReplayGainUpdated(double)),
-            this, SLOT(slotSetReplayGain(double)));
+        // Listen for updates to the file's Replay Gain
+        connect(m_pLoadedTrack.data(), SIGNAL(ReplayGainUpdated(double)),
+                this, SLOT(slotSetReplayGain(double)));
+    }
 
     //Request a new track from the reader
     emit(loadTrack(track, bPlay));
 }
 
-void BaseTrackPlayer::slotLoadFailed(TrackPointer track, QString reason) {
+void BaseTrackPlayerImpl::slotLoadFailed(TrackPointer track, QString reason) {
+    // TODO(rryan): Currently load failed doesn't clear the deck as an unload
+    // would. Should we?
     if (track != NULL) {
         qDebug() << "Failed to load track" << track->getLocation() << reason;
         emit(loadTrackFailed(track));
@@ -193,7 +203,7 @@ void BaseTrackPlayer::slotLoadFailed(TrackPointer track, QString reason) {
     QMessageBox::warning(NULL, tr("Couldn't load track."), reason);
 }
 
-void BaseTrackPlayer::slotUnloadTrack(TrackPointer) {
+void BaseTrackPlayerImpl::slotUnloadTrack(TrackPointer) {
     if (m_pLoadedTrack) {
         // WARNING: Never. Ever. call bare disconnect() on an object. Mixxx
         // relies on signals and slots to get tons of things done. Don't
@@ -221,7 +231,7 @@ void BaseTrackPlayer::slotUnloadTrack(TrackPointer) {
     PlayerInfo::instance().setTrackInfo(getGroup(), m_pLoadedTrack);
 }
 
-void BaseTrackPlayer::slotFinishLoading(TrackPointer pTrackInfoObject)
+void BaseTrackPlayerImpl::slotFinishLoading(TrackPointer pTrackInfoObject)
 {
     m_replaygainPending = false;
     // Read the tags if required
@@ -280,15 +290,29 @@ void BaseTrackPlayer::slotFinishLoading(TrackPointer pTrackInfoObject)
         }
         m_pPreGain->set(1.0);
     }
-
+    int reset = m_pConfig->getValueString(ConfigKey(
+            "[Controls]", "SpeedAutoReset"),
+            QString("%1").arg(RESET_PITCH)).toInt();
+    switch (reset) {
+      case RESET_PITCH_AND_SPEED:
+        // Note: speed may affect pitch
+        if (m_pSpeed != NULL) {
+            m_pSpeed->set(0.0);
+        }
+        // Fallthrough intended
+      case RESET_PITCH:
+        if (m_pPitchAdjust != NULL) {
+            m_pPitchAdjust->set(0.0);
+        }
+    }
     emit(newTrackLoaded(m_pLoadedTrack));
 }
 
-TrackPointer BaseTrackPlayer::getLoadedTrack() const {
+TrackPointer BaseTrackPlayerImpl::getLoadedTrack() const {
     return m_pLoadedTrack;
 }
 
-void BaseTrackPlayer::slotSetReplayGain(double replayGain) {
+void BaseTrackPlayerImpl::slotSetReplayGain(double replayGain) {
     // Do not change replay gain when track is playing because
     // this may lead to an unexpected volume change
     if (m_pPlay->get() == 0.0) {
@@ -298,23 +322,25 @@ void BaseTrackPlayer::slotSetReplayGain(double replayGain) {
     }
 }
 
-void BaseTrackPlayer::slotPlayToggled(double v) {
+void BaseTrackPlayerImpl::slotPlayToggled(double v) {
     if (!v && m_replaygainPending) {
         m_pReplayGain->slotSet(m_pLoadedTrack->getReplayGain());
         m_replaygainPending = false;
     }
 }
 
-EngineDeck* BaseTrackPlayer::getEngineDeck() const {
+EngineDeck* BaseTrackPlayerImpl::getEngineDeck() const {
     return m_pChannel;
 }
 
-void BaseTrackPlayer::setupEqControls() {
+void BaseTrackPlayerImpl::setupEqControls() {
     const QString group = getGroup();
-    m_pLowFilter = new ControlObjectSlave(group,"filterLow");
-    m_pMidFilter = new ControlObjectSlave(group,"filterMid");
-    m_pHighFilter = new ControlObjectSlave(group,"filterHigh");
-    m_pLowFilterKill = new ControlObjectSlave(group,"filterLowKill");
-    m_pMidFilterKill = new ControlObjectSlave(group,"filterMidKill");
-    m_pHighFilterKill = new ControlObjectSlave(group,"filterHighKill");
+    m_pLowFilter = new ControlObjectSlave(group, "filterLow");
+    m_pMidFilter = new ControlObjectSlave(group, "filterMid");
+    m_pHighFilter = new ControlObjectSlave(group, "filterHigh");
+    m_pLowFilterKill = new ControlObjectSlave(group, "filterLowKill");
+    m_pMidFilterKill = new ControlObjectSlave(group, "filterMidKill");
+    m_pHighFilterKill = new ControlObjectSlave(group, "filterHighKill");
+    m_pSpeed = new ControlObjectSlave(group, "rate");
+    m_pPitchAdjust = new ControlObjectSlave(group, "pitch_adjust");
 }

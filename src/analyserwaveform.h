@@ -31,14 +31,15 @@ inline CSAMPLE scaleSignal(CSAMPLE invalue, FilterIndex index = FilterCount) {
     }
 }
 
-class WaveformStride {
-    inline void init(double samples, double averageSamples) {
-        m_length = samples;
-        m_averageLength = averageSamples;
-        m_postScaleConversion = (float)std::numeric_limits<unsigned char>::max();
-        m_position = 0;
-        m_averagePosition = 0;
-        m_averageDivisor = 0;
+struct WaveformStride {
+    WaveformStride(double samples, double averageSamples)
+            : m_position(0),
+              m_length(samples),
+              m_averageLength(averageSamples),
+              m_averagePosition(0),
+              m_averageDivisor(0),
+              m_postScaleConversion(static_cast<float>(
+                      std::numeric_limits<unsigned char>::max())) {
         for (int i = 0; i < ChannelCount; ++i) {
             m_overallData[i] = 0.0f;
             m_averageOverallData[i] = 0.0f;
@@ -122,7 +123,6 @@ class WaveformStride {
         }
     }
 
-  private:
     int m_position;
     double m_length;
     double m_averageLength;
@@ -136,9 +136,6 @@ class WaveformStride {
     float m_averageFilteredData[ChannelCount][FilterCount];
 
     float m_postScaleConversion;
-
-  private:
-    friend class AnalyserWaveform;
 };
 
 class AnalyserWaveform : public Analyser {
@@ -163,10 +160,8 @@ class AnalyserWaveform : public Analyser {
   private:
     bool m_skipProcessing;
 
-    Waveform* m_waveform;
-    Waveform* m_waveformSummary;
-    int m_waveformDataSize;
-    int m_waveformSummaryDataSize;
+    WaveformPointer m_waveform;
+    WaveformPointer m_waveformSummary;
     WaveformData* m_waveformData;
     WaveformData* m_waveformSummaryData;
 

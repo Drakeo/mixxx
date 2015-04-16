@@ -7,7 +7,7 @@
 #include <cmath>
 #include <algorithm>
 
-#include <QtDebug>
+#include "util/assert.h"
 
 // If we don't do this then we get the C90 fabs from the global namespace which
 // is only defined for double.
@@ -17,32 +17,13 @@ using std::fabs;
 #define math_min std::min
 #define math_max3(a, b, c) math_max(math_max((a), (b)), (c))
 
-// Restrict value to the range [min, max]. Undefined behavior
-// if min > max.
-template <typename T>
-inline T math_clamp_unsafe(T value, T min, T max) {
-    return math_max(min, math_min(max, value));
-}
-
-// Clamp with bounds checking to avoid undefined behavior
-// on invalid min/max parameters.
-template <typename T>
-inline T math_clamp_safe(T value, T min, T max) {
-    if (min <= max) {
-        // valid bounds
-        return math_clamp_unsafe(value, min, max);
-    } else {
-        // invalid bounds
-        qWarning() << "PROGRAMMING ERROR: math_clamp_safe() called with min > max!"
-                   << min << ">" << max;
-        // simply return the value unchanged
-        return value;
-    }
-}
-
+// Restrict value to the range [min, max]. Undefined behavior if min > max.
 template <typename T>
 inline T math_clamp(T value, T min, T max) {
-    return math_clamp_safe(value, min, max);
+    // DEBUG_ASSERT compiles out in release builds so it does not affect
+    // vectorization or pipelining of clamping in tight loops.
+    DEBUG_ASSERT(min <= max);
+    return math_max(min, math_min(max, value));
 }
 
 // NOTE(rryan): It is an error to call even() on a floating point number. Do not
@@ -71,15 +52,16 @@ inline bool even(T value) {
 #endif
 
 inline int roundUpToPowerOf2(int v) {
-    // From http://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2
-    v--;
-    v |= v >> 1;
-    v |= v >> 2;
-    v |= v >> 4;
-    v |= v >> 8;
-    v |= v >> 16;
-    v++;
-    return v;
+    int power = 1;
+    while (power < v && power > 0) {
+        power *= 2;
+    }
+    // There is not a power of 2 higher than v representable by our
+    // architecture's integer size.
+    if (power < 0) {
+        return -1;
+    }
+    return power;
 }
 
 // MSVS 2013 (_MSC_VER 1800) introduced C99 support.

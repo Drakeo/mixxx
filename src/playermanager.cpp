@@ -19,6 +19,7 @@
 #include "effects/effectsmanager.h"
 #include "util/stat.h"
 #include "engine/enginedeck.h"
+#include "util/assert.h"
 
 PlayerManager::PlayerManager(ConfigObject<ConfigValue>* pConfig,
                              SoundManager* pSoundManager,
@@ -120,10 +121,13 @@ void PlayerManager::bindToLibrary(Library* pLibrary) {
 unsigned int PlayerManager::numDecks() {
     // We do this to cache the control once it is created so callers don't incur
     // a hashtable lookup every time they call this.
-    static ControlObject* pNumCO = NULL;
+    static ControlObjectSlave* pNumCO = NULL;
     if (pNumCO == NULL) {
-        pNumCO = ControlObject::getControl(
-            ConfigKey("[Master]", "num_decks"));
+        pNumCO = new ControlObjectSlave(ConfigKey("[Master]", "num_decks"));
+        if (!pNumCO->valid()) {
+            delete pNumCO;
+            pNumCO = NULL;
+        }
     }
     return pNumCO ? pNumCO->get() : 0;
 }
@@ -146,13 +150,33 @@ bool PlayerManager::isDeckGroup(const QString& group, int* number) {
 }
 
 // static
+bool PlayerManager::isPreviewDeckGroup(const QString& group, int* number) {
+    if (!group.startsWith("[PreviewDeck")) {
+        return false;
+    }
+
+    bool ok = false;
+    int deckNum = group.mid(12,group.lastIndexOf("]")-12).toInt(&ok);
+    if (!ok || deckNum <= 0) {
+        return false;
+    }
+    if (number != NULL) {
+        *number = deckNum;
+    }
+    return true;
+}
+
+// static
 unsigned int PlayerManager::numSamplers() {
     // We do this to cache the control once it is created so callers don't incur
     // a hashtable lookup every time they call this.
-    static ControlObject* pNumCO = NULL;
+    static ControlObjectSlave* pNumCO = NULL;
     if (pNumCO == NULL) {
-        pNumCO = ControlObject::getControl(
-            ConfigKey("[Master]", "num_samplers"));
+        pNumCO = new ControlObjectSlave(ConfigKey("[Master]", "num_samplers"));
+        if (!pNumCO->valid()) {
+            delete pNumCO;
+            pNumCO = NULL;
+        }
     }
     return pNumCO ? pNumCO->get() : 0;
 }
@@ -161,10 +185,14 @@ unsigned int PlayerManager::numSamplers() {
 unsigned int PlayerManager::numPreviewDecks() {
     // We do this to cache the control once it is created so callers don't incur
     // a hashtable lookup every time they call this.
-    static ControlObject* pNumCO = NULL;
+    static ControlObjectSlave* pNumCO = NULL;
     if (pNumCO == NULL) {
-        pNumCO = ControlObject::getControl(
-            ConfigKey("[Master]", "num_preview_decks"));
+        pNumCO = new ControlObjectSlave(
+                ConfigKey("[Master]", "num_preview_decks"));
+        if (!pNumCO->valid()) {
+            delete pNumCO;
+            pNumCO = NULL;
+        }
     }
     return pNumCO ? pNumCO->get() : 0;
 }
@@ -236,6 +264,10 @@ void PlayerManager::addConfiguredDecks() {
 void PlayerManager::addDeckInner() {
     // Do not lock m_mutex here.
     QString group = groupForDeck(m_decks.count());
+    DEBUG_ASSERT_AND_HANDLE(!m_players.contains(group)) {
+        return;
+    }
+
     int number = m_decks.count() + 1;
 
     EngineChannel::ChannelOrientation orientation = EngineChannel::LEFT;
@@ -250,7 +282,6 @@ void PlayerManager::addDeckInner() {
                 m_pAnalyserQueue, SLOT(slotAnalyseTrack(TrackPointer)));
     }
 
-    Q_ASSERT(!m_players.contains(group));
     m_players[group] = pDeck;
     m_decks.append(pDeck);
 
@@ -291,6 +322,10 @@ void PlayerManager::addSamplerInner() {
     // Do not lock m_mutex here.
     QString group = groupForSampler(m_samplers.count());
 
+    DEBUG_ASSERT_AND_HANDLE(!m_players.contains(group)) {
+        return;
+    }
+
     // All samplers are in the center
     EngineChannel::ChannelOrientation orientation = EngineChannel::CENTER;
 
@@ -301,7 +336,6 @@ void PlayerManager::addSamplerInner() {
                 m_pAnalyserQueue, SLOT(slotAnalyseTrack(TrackPointer)));
     }
 
-    Q_ASSERT(!m_players.contains(group));
     m_players[group] = pSampler;
     m_samplers.append(pSampler);
 }
@@ -315,6 +349,9 @@ void PlayerManager::addPreviewDeck() {
 void PlayerManager::addPreviewDeckInner() {
     // Do not lock m_mutex here.
     QString group = groupForPreviewDeck(m_preview_decks.count());
+    DEBUG_ASSERT_AND_HANDLE(!m_players.contains(group)) {
+        return;
+    }
 
     // All preview decks are in the center
     EngineChannel::ChannelOrientation orientation = EngineChannel::CENTER;
@@ -327,7 +364,6 @@ void PlayerManager::addPreviewDeckInner() {
                 m_pAnalyserQueue, SLOT(slotAnalyseTrack(TrackPointer)));
     }
 
-    Q_ASSERT(!m_players.contains(group));
     m_players[group] = pPreviewDeck;
     m_preview_decks.append(pPreviewDeck);
 }
@@ -339,7 +375,6 @@ BaseTrackPlayer* PlayerManager::getPlayer(QString group) const {
     }
     return NULL;
 }
-
 
 Deck* PlayerManager::getDeck(unsigned int deck) const {
     QMutexLocker locker(&m_mutex);

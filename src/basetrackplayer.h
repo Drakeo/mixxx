@@ -15,18 +15,45 @@ class ControlObjectSlave;
 class AnalyserQueue;
 class EffectsManager;
 
+// Interface for not leaking implementation details of BaseTrackPlayer into the
+// rest of Mixxx. Also makes testing a lot easier.
 class BaseTrackPlayer : public BasePlayer {
     Q_OBJECT
   public:
-    BaseTrackPlayer(QObject* pParent,
-                    ConfigObject<ConfigValue>* pConfig,
-                    EngineMaster* pMixingEngine,
-                    EffectsManager* pEffectsManager,
-                    EngineChannel::ChannelOrientation defaultOrientation,
-                    QString group,
-                    bool defaultMaster,
-                    bool defaultHeadphones);
-    virtual ~BaseTrackPlayer();
+    // The ordering here corresponds to the ordering of the preferences combo box.
+    enum TrackLoadReset {
+        RESET_NONE,
+        RESET_PITCH,
+        RESET_PITCH_AND_SPEED,
+    };
+
+    BaseTrackPlayer(QObject* pParent, const QString& group);
+    virtual ~BaseTrackPlayer() {}
+
+    virtual TrackPointer getLoadedTrack() const = 0;
+
+  public slots:
+    virtual void slotLoadTrack(TrackPointer pTrack, bool bPlay=false) = 0;
+
+  signals:
+    void loadTrack(TrackPointer pTrack, bool bPlay=false);
+    void loadTrackFailed(TrackPointer pTrack);
+    void newTrackLoaded(TrackPointer pLoadedTrack);
+    void unloadingTrack(TrackPointer pAboutToBeUnloaded);
+};
+
+class BaseTrackPlayerImpl : public BaseTrackPlayer {
+    Q_OBJECT
+  public:
+    BaseTrackPlayerImpl(QObject* pParent,
+                        ConfigObject<ConfigValue>* pConfig,
+                        EngineMaster* pMixingEngine,
+                        EffectsManager* pEffectsManager,
+                        EngineChannel::ChannelOrientation defaultOrientation,
+                        QString group,
+                        bool defaultMaster,
+                        bool defaultHeadphones);
+    virtual ~BaseTrackPlayerImpl();
 
     TrackPointer getLoadedTrack() const;
 
@@ -43,12 +70,6 @@ class BaseTrackPlayer : public BasePlayer {
     void slotUnloadTrack(TrackPointer track);
     void slotSetReplayGain(double replayGain);
     void slotPlayToggled(double);
-
-  signals:
-    void loadTrack(TrackPointer pTrack, bool bPlay=false);
-    void loadTrackFailed(TrackPointer pTrack);
-    void newTrackLoaded(TrackPointer pLoadedTrack);
-    void unloadingTrack(TrackPointer pAboutToBeUnloaded);
 
   private:
     ConfigObject<ConfigValue>* m_pConfig;
@@ -72,10 +93,11 @@ class BaseTrackPlayer : public BasePlayer {
     ControlObjectSlave* m_pMidFilterKill;
     ControlObjectSlave* m_pHighFilterKill;
     ControlObjectSlave* m_pPreGain;
+    ControlObjectSlave* m_pSpeed;
+    ControlObjectSlave* m_pPitchAdjust;
     EngineDeck* m_pChannel;
 
     bool m_replaygainPending;
 };
-
 
 #endif // BASETRACKPLAYER_H
