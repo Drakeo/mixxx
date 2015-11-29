@@ -181,7 +181,21 @@ class Qt(Dependence):
         return build.env.Uic5 if qt5 else build.env.Uic4
 
     @staticmethod
-    def find_framework_path(qtdir):
+    def find_framework_libdir(qtdir, qt5):
+        # Try pkg-config on Linux
+        import sys
+        if sys.platform.startswith('linux'):
+            if any(os.access(os.path.join(path, 'pkg-config'), os.X_OK) for path in os.environ["PATH"].split(os.pathsep)):
+                import subprocess
+                try:
+                    if qt5:
+                        core = subprocess.Popen(["pkg-config", "--variable=libdir", "Qt5Core"], stdout = subprocess.PIPE).communicate()[0].rstrip()
+                    else:
+                        core = subprocess.Popen(["pkg-config", "--variable=libdir", "QtCore"], stdout = subprocess.PIPE).communicate()[0].rstrip()
+                finally:
+                    if os.path.isdir(core):
+                        return core
+
         for d in (os.path.join(qtdir, x) for x in ['', 'Frameworks', 'lib']):
             core = os.path.join(d, 'QtCore.framework')
             if os.path.isdir(core):
@@ -244,7 +258,7 @@ class Qt(Dependence):
             if qt5:
                 # Note that -reduce-relocations is enabled by default in Qt5.
                 # So we must build the code with position independent code
-                build.env.Append(CCFLAGS='-fPIE')
+                build.env.Append(CCFLAGS='-fPIC')
 
         elif build.platform_is_bsd:
             build.env.Append(LIBS=qt_modules)
@@ -256,7 +270,7 @@ class Qt(Dependence):
             build.env.Append(
                 LINKFLAGS=' '.join('-framework %s' % m for m in qt_modules)
             )
-            framework_path = Qt.find_framework_path(qtdir)
+            framework_path = Qt.find_framework_libdir(qtdir, qt5)
             if not framework_path:
                 raise Exception(
                     'Could not find frameworks in Qt directory: %s' % qtdir)
@@ -343,9 +357,7 @@ class Qt(Dependence):
                 os.popen('sw_vers').readlines()[1].find('10.4') >= 0)
         if not build.platform_is_windows and not (using_104_sdk or compiling_on_104):
             qtdir = build.env['QTDIR']
-            # TODO(XXX) should we use find_framework_path here or keep lib
-            # hardcoded?
-            framework_path = os.path.join(qtdir, 'lib')
+            framework_path = Qt.find_framework_libdir(qtdir, qt5)
             if os.path.isdir(framework_path):
                 build.env.Append(LINKFLAGS="-Wl,-rpath," + framework_path)
                 build.env.Append(LINKFLAGS="-L" + framework_path)
@@ -426,7 +438,7 @@ class SoundTouch(Dependence):
 
         # If we do not want optimizations then disable them.
         optimize = (build.flags['optimize'] if 'optimize' in build.flags
-                    else Optimize.get_optimization_level())
+                    else Optimize.get_optimization_level(build))
         if optimize == Optimize.LEVEL_OFF:
             env.Append(CPPDEFINES='SOUNDTOUCH_DISABLE_X86_OPTIMIZATIONS')
 
@@ -639,6 +651,7 @@ class MixxxCore(Feature):
                    "engine/readaheadmanager.cpp",
                    "engine/enginetalkoverducking.cpp",
                    "cachingreader.cpp",
+                   "cachingreaderchunk.cpp",
                    "cachingreaderworker.cpp",
 
                    "analyserrg.cpp",
@@ -653,6 +666,7 @@ class MixxxCore(Feature):
                    "controllers/controllermanager.cpp",
                    "controllers/controllerpresetfilehandler.cpp",
                    "controllers/controllerpresetinfo.cpp",
+                   "controllers/controllerpresetinfoenumerator.cpp",
                    "controllers/controlpickermenu.cpp",
                    "controllers/controllermappingtablemodel.cpp",
                    "controllers/controllerinputmappingtablemodel.cpp",
@@ -763,6 +777,7 @@ class MixxxCore(Feature):
                    "library/proxytrackmodel.cpp",
                    "library/coverart.cpp",
                    "library/coverartcache.cpp",
+                   "library/coverartutils.cpp",
 
                    "library/playlisttablemodel.cpp",
                    "library/libraryfeature.cpp",
@@ -800,7 +815,6 @@ class MixxxCore(Feature):
 
                    "library/cratefeature.cpp",
                    "library/sidebarmodel.cpp",
-                   "library/legacylibraryimporter.cpp",
                    "library/library.cpp",
 
                    "library/scanner/libraryscanner.cpp",
@@ -860,11 +874,6 @@ class MixxxCore(Feature):
                    "waveform/renderers/waveformrendererrgb.cpp",
                    "waveform/renderers/qtwaveformrendererfilteredsignal.cpp",
                    "waveform/renderers/qtwaveformrenderersimplesignal.cpp",
-                   "waveform/renderers/glwaveformrendererfilteredsignal.cpp",
-                   "waveform/renderers/glwaveformrenderersimplesignal.cpp",
-                   "waveform/renderers/glslwaveformrenderersignal.cpp",
-                   "waveform/renderers/glvsynctestrenderer.cpp",
-                   "waveform/renderers/glwaveformrendererrgb.cpp",
 
                    "waveform/renderers/waveformsignalcolors.cpp",
 
@@ -872,6 +881,11 @@ class MixxxCore(Feature):
                    "waveform/renderers/waveformmark.cpp",
                    "waveform/renderers/waveformmarkset.cpp",
                    "waveform/renderers/waveformmarkrange.cpp",
+		   "waveform/renderers/glwaveformrenderersimplesignal.cpp",
+		   "waveform/renderers/glwaveformrendererrgb.cpp",
+		   "waveform/renderers/glwaveformrendererfilteredsignal.cpp",
+		   "waveform/renderers/glslwaveformrenderersignal.cpp",
+		   "waveform/renderers/glvsynctestrenderer.cpp",
 
                    "waveform/widgets/waveformwidgetabstract.cpp",
                    "waveform/widgets/emptywaveformwidget.cpp",
@@ -898,6 +912,7 @@ class MixxxCore(Feature):
                    "skin/skincontext.cpp",
                    "skin/svgparser.cpp",
                    "skin/pixmapsource.cpp",
+                   "skin/launchimage.cpp",
 
                    "sampleutil.cpp",
                    "samplebuffer.cpp",
@@ -921,6 +936,8 @@ class MixxxCore(Feature):
                    "playermanager.cpp",
                    "samplerbank.cpp",
                    "sounddevice.cpp",
+                   "sounddevicenetwork.cpp",
+                   "engine/sidechain/enginenetworkstream.cpp",
                    "soundmanager.cpp",
                    "soundmanagerconfig.cpp",
                    "soundmanagerutil.cpp",
@@ -953,6 +970,8 @@ class MixxxCore(Feature):
                    "util/tapfilter.cpp",
                    "util/movinginterquartilemean.cpp",
                    "util/console.cpp",
+                   "util/dbid.cpp",
+                   "util/replaygain.cpp",
 
                    '#res/mixxx.qrc'
                    ]
@@ -1082,11 +1101,6 @@ class MixxxCore(Feature):
                 build.env.Append(LINKFLAGS='/MACHINE:ARM')
             else:
                 raise Exception('Invalid machine type for Windows build.')
-
-            # Ugh, MSVC-only hack :( see
-            # http://www.qtforum.org/article/17883/problem-using-qstring-
-            # fromstdwstring.html
-            build.env.Append(CXXFLAGS='/Zc:wchar_t-')
 
             # Build with multiple processes. TODO(XXX) make this configurable.
             # http://msdn.microsoft.com/en-us/library/bb385193.aspx
