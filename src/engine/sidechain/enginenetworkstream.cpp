@@ -1,3 +1,5 @@
+#include "engine/sidechain/enginenetworkstream.h"
+
 #ifdef __WINDOWS__
 #include <windows.h>
 #include "util/performancetimer.h"
@@ -12,11 +14,7 @@ typedef VOID (WINAPI *PgGetSystemTimeFn)(LPFILETIME);
 static PgGetSystemTimeFn s_pfpgGetSystemTimeFn = NULL;
 #endif
 
-
-
-#include "engine/sidechain/enginenetworkstream.h"
-
-#include "sampleutil.h"
+#include "util/sample.h"
 
 const int kNetworkLatencyFrames = 8192; // 185 ms @ 44100 Hz
 // Related chunk sizes:
@@ -92,6 +90,9 @@ int EngineNetworkStream::getReadExpected() {
 }
 
 void EngineNetworkStream::write(const CSAMPLE* buffer, int frames) {
+    if (m_pWorker.isNull()) {
+        return;
+    }
 
     //qDebug() << "EngineNetworkStream::write()" << frames;
     if (!m_pWorker->threadWaiting()) {
@@ -104,6 +105,7 @@ void EngineNetworkStream::write(const CSAMPLE* buffer, int frames) {
     int writeRequired = frames * m_numOutputChannels;
     if (writeAvailable < writeRequired) {
         qDebug() << "EngineNetworkStream::write() buffer full, loosing samples";
+        NetworkStreamWorker::debugState();
         m_writeOverflowCount++;
     }
     int copyCount = math_min(writeAvailable, writeRequired);
@@ -119,6 +121,9 @@ void EngineNetworkStream::write(const CSAMPLE* buffer, int frames) {
 }
 
 void EngineNetworkStream::writeSilence(int frames) {
+    if (m_pWorker.isNull()) {
+        return;
+    }
     //qDebug() << "EngineNetworkStream::writeSilence()" << frames;
     if (!m_pWorker->threadWaiting()) {
         // no thread waiting, so we can advance the stream without
@@ -130,6 +135,7 @@ void EngineNetworkStream::writeSilence(int frames) {
     int writeRequired = frames * m_numOutputChannels;
     if (writeAvailable < writeRequired) {
         qDebug() << "EngineNetworkStream::writeSilence() buffer full";
+        NetworkStreamWorker::debugState();
     }
     int clearCount = math_min(writeAvailable, writeRequired);
     if (clearCount > 0) {
@@ -152,6 +158,9 @@ void EngineNetworkStream::writeSilence(int frames) {
 }
 
 void EngineNetworkStream::scheduleWorker() {
+    if (m_pWorker.isNull()) {
+        return;
+    }
     if (m_pOutputFifo->readAvailable()
             >= m_numOutputChannels * kNetworkLatencyFrames) {
         m_pWorker->outputAvailable();
@@ -206,12 +215,12 @@ qint64 EngineNetworkStream::getNetworkTimeUs() {
         static PerformanceTimer timerSinceInc;
         GetSystemTimeAsFileTime(&ft);
         qint64 now = ((qint64)ft.dwHighDateTime << 32 | ft.dwLowDateTime) / 10;
-        if(now == oldNow) {
+        if (now == oldNow) {
             // timer was not incremented since last call (< 15 ms)
             // Add time since last function call after last increment
             // This reduces the jitter < one call cycle which is sufficient
             LARGE_INTEGER li;
-            now += timerSinceInc.elapsed() / 1000;
+            now += timerSinceInc.elapsed().toIntegerMicros();
         } else {
             // timer was incremented
             LARGE_INTEGER li;
@@ -237,5 +246,7 @@ qint64 EngineNetworkStream::getNetworkTimeUs() {
 
 void EngineNetworkStream::addWorker(QSharedPointer<NetworkStreamWorker> pWorker) {
     m_pWorker = pWorker;
-    m_pWorker->setOutputFifo(m_pOutputFifo);
+    if (m_pWorker) {
+        m_pWorker->setOutputFifo(m_pOutputFifo);
+    }
 }
