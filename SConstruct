@@ -53,7 +53,7 @@ available_features = [features.Mad,
                       features.TestSuite,
                       features.Vamp,
                       features.ColorDiagnostics,
-                      features.AddressSanitizer,
+                      features.Sanitizers,
                       features.LocaleCompare,
                       features.Battery,
 
@@ -63,8 +63,9 @@ available_features = [features.Mad,
                       features.IPod,
                       features.FFMPEG,
 
-		     # Experimental features
-		     features.OpenGLES
+                      # Experimental features
+                      features.OpenGLES,
+                      features.QtKeychain
                       ]
 
 build = mixxx.MixxxBuild(target, machine, build_type,

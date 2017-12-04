@@ -146,8 +146,8 @@ void BrowseThread::populateModel() {
         }
 
         QString filepath = fileIt.next();
-        TrackPointer pTrack(Track::newTemporary(filepath, thisPath.token()));
-        SoundSourceProxy(pTrack).loadTrackMetadata();
+        auto pTrack = Track::newTemporary(filepath, thisPath.token());
+        SoundSourceProxy(pTrack).updateTrackFromSource();
 
         QList<QStandardItem*> row_data;
 
@@ -238,10 +238,12 @@ void BrowseThread::populateModel() {
         item->setData(pTrack->getBitrate(), Qt::UserRole);
         row_data.insert(COLUMN_BITRATE, item);
 
-        item = new QStandardItem(pTrack->getLocation());
-        item->setToolTip(item->text());
-        item->setData(item->text(), Qt::UserRole);
-        row_data.insert(COLUMN_LOCATION, item);
+        QString location = pTrack->getLocation();
+        QString nativeLocation = QDir::toNativeSeparators(location);
+        item = new QStandardItem(nativeLocation);
+        item->setToolTip(nativeLocation);
+        item->setData(location, Qt::UserRole);
+        row_data.insert(COLUMN_NATIVELOCATION, item);
 
         QDateTime modifiedTime = pTrack->getFileModifiedTime().toLocalTime();
         item = new QStandardItem(modifiedTime.toString(Qt::DefaultLocaleShortDate));

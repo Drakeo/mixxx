@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 
 import os
-import util
-from mixxx import Feature
+from . import util
+from .mixxx import Feature
 import SCons.Script as SCons
-import depends
+from . import depends
 
 class OpenGLES(Feature):
     def description(self):
@@ -12,7 +12,7 @@ class OpenGLES(Feature):
 
     def enabled(self, build):
         build.flags['opengles'] = util.get_flags(build.env, 'opengles', 0)
-	return int(build.flags['opengles'])
+        return int(build.flags['opengles'])
 
     def add_options(self, build, vars):
         vars.Add('opengles', 'Set to 1 to enable OpenGL-ES >= 2.0 support [Experimental]', 0)
@@ -20,8 +20,8 @@ class OpenGLES(Feature):
     def configure(self, build, conf):
         if not self.enabled(build):
             return
-	if build.flags['opengles']:
-	    build.env.Append(CPPDEFINES='__OPENGLES__')
+        if build.flags['opengles']:
+            build.env.Append(CPPDEFINES='__OPENGLES__')
 
     def sources(self, build):
         return []
@@ -246,6 +246,7 @@ class CoreAudio(Feature):
 
     def sources(self, build):
         return ['sources/soundsourcecoreaudio.cpp',
+                'sources/v1/legacyaudiosourceadapter.cpp',
                 '#lib/apple/CAStreamBasicDescription.cpp']
 
 
@@ -334,7 +335,7 @@ class VinylControl(Feature):
                                                      'vinylcontrol', 0)
         # Existence of the macappstore option forces vinylcontrol off due to
         # licensing issues.
-        if build.flags.has_key('macappstore') and int(build.flags['macappstore']):
+        if 'macappstore' in build.flags and int(build.flags['macappstore']):
             return False
         if int(build.flags['vinylcontrol']):
             return True
@@ -550,27 +551,41 @@ class ColorDiagnostics(Feature):
         build.env.Append(CCFLAGS='-fcolor-diagnostics')
 
 
-class AddressSanitizer(Feature):
+class Sanitizers(Feature):
+    # Known sanitizers, their names, and their -fsanitize=foo argument.
+    SANITIZERS = [('asan', 'AddressSanitizer', 'address'),
+                  ('ubsan', 'UndefinedBehaviorSanitizer', 'undefined'),
+                  ('tsan', 'ThreadSanitizer', 'thread')]
     def description(self):
-        return "Address Sanitizer"
+        return "Clang Sanitizers (asan, ubsan, tsan, etc.)"
 
     def enabled(self, build):
-        build.flags['asan'] = util.get_flags(build.env, 'asan', 0)
-        return bool(int(build.flags['asan']))
+        any_enabled = False
+        for keyword, _, _ in Sanitizers.SANITIZERS:
+            build.flags[keyword] = util.get_flags(build.env, keyword, 0)
+            any_enabled = any_enabled or bool(int(build.flags[keyword]))
+        return any_enabled
 
     def add_options(self, build, vars):
-        vars.Add("asan", "Set to 1 to enable linking against the Clang AddressSanitizer.", 0)
+        for keyword, name, _ in Sanitizers.SANITIZERS:
+            vars.Add(keyword, "Set to 1 to enable the Clang %s." % name, 0)
 
     def configure(self, build, conf):
         if not self.enabled(build):
             return
 
         if not build.compiler_is_clang:
-            raise Exception('Address Sanitizer is only available using clang.')
+            raise Exception('Sanitizers are only available when using clang.')
 
-        # -fno-omit-frame-pointer gets much better stack traces in asan output.
-        build.env.Append(CCFLAGS="-fsanitize=address -fno-omit-frame-pointer")
-        build.env.Append(LINKFLAGS="-fsanitize=address -fno-omit-frame-pointer")
+        sanitizers = []
+        for keyword, _, fsanitize in Sanitizers.SANITIZERS:
+            if bool(int(build.flags[keyword])):
+                sanitizers.append(fsanitize)
+
+        # The Optimize feature below checks whether we are enabled and prevents
+        # -fomit-frame-pointer if any sanitizer is enabled.
+        build.env.Append(CCFLAGS="-fsanitize=%s" % ','.join(sanitizers))
+        build.env.Append(LINKFLAGS="-fsanitize=%s" % ','.join(sanitizers))
 
 
 class PerfTools(Feature):
@@ -839,7 +854,7 @@ class LiveBroadcasting(Feature):
         depends.Qt.uic(build)('preferences/dialog/dlgprefbroadcastdlg.ui')
         return ['preferences/dialog/dlgprefbroadcast.cpp',
                 'broadcast/broadcastmanager.cpp',
-                'engine/sidechain/enginebroadcast.cpp']
+                'engine/sidechain/shoutconnection.cpp']
 
 
 class Opus(Feature):
@@ -981,7 +996,7 @@ class Optimize(Feature):
     LEVEL_PORTABLE = 'portable'
     LEVEL_NATIVE = 'native'
     LEVEL_LEGACY = 'legacy'
-
+    LEVEL_FASTBUILD = 'fastbuild'
     LEVEL_DEFAULT = LEVEL_PORTABLE
 
     def description(self):
@@ -1012,7 +1027,8 @@ class Optimize(Feature):
             optimize_level = Optimize.LEVEL_OFF
 
         if optimize_level not in (Optimize.LEVEL_OFF, Optimize.LEVEL_PORTABLE,
-                                  Optimize.LEVEL_NATIVE, Optimize.LEVEL_LEGACY):
+                                  Optimize.LEVEL_NATIVE, Optimize.LEVEL_LEGACY,
+                                  Optimize.LEVEL_FASTBUILD):
             raise Exception("optimize={} is not supported. "
                             "Use portable, native, legacy or off"
                             .format(optimize_level))
@@ -1026,10 +1042,16 @@ class Optimize(Feature):
         vars.Add(
             'optimize', 'Set to:\n' \
                         '  portable: sse2 CPU (>= Pentium 4)\n' \
+                        '  fastbuild: portable, but without costly optimization steps\n' \
                         '  native: optimized for the CPU of this system\n' \
                         '  legacy: pure i386 code' \
                         '  off: no optimization' \
                         , Optimize.LEVEL_DEFAULT)
+
+    def build_status(self, level, text=None):
+        if text is None:
+            return level
+        return '%s: %s' % (level, text)
 
     def configure(self, build, conf):
         if not self.enabled(build):
@@ -1038,13 +1060,15 @@ class Optimize(Feature):
         optimize_level = build.flags['optimize']
 
         if optimize_level == Optimize.LEVEL_OFF:
-            self.status = "off: no optimization"
+            self.status = self.build_status(optimize_level, "no optimization")
             return
 
         if build.toolchain_is_msvs:
+            fastbuild_enabled = optimize_level == Optimize.LEVEL_FASTBUILD
+
             # /GL : http://msdn.microsoft.com/en-us/library/0zza0de8.aspx
             # !!! /GL is incompatible with /ZI, which is set by mscvdebug
-            build.env.Append(CCFLAGS='/GL')
+            build.env.Append(CCFLAGS='/GL-' if fastbuild_enabled else '/GL')
 
             # Use the fastest floating point math library
             # http://msdn.microsoft.com/en-us/library/e7s85ffb.aspx
@@ -1055,7 +1079,7 @@ class Optimize(Feature):
             # -- this relies on ANSI control characters and tends to overwhelm
             # Jenkins logs) Should we turn on PGO ?
             # http://msdn.microsoft.com/en-us/library/xbf3tbeh.aspx
-            build.env.Append(LINKFLAGS='/LTCG:NOSTATUS')
+            build.env.Append(LINKFLAGS='/LTCG:OFF' if fastbuild_enabled else '/LTCG:NOSTATUS')
 
             # Suggested for unused code removal
             # http://msdn.microsoft.com/en-us/library/ms235601.aspx
@@ -1073,19 +1097,22 @@ class Optimize(Feature):
             # In general, you should pick /O2 over /Ox
             build.env.Append(CCFLAGS='/O2')
 
-            if optimize_level == Optimize.LEVEL_PORTABLE:
-                # portable-binary: sse2 CPU (>= Pentium 4)
-                self.status = "portable: sse2 CPU (>= Pentium 4)"
+            if optimize_level == Optimize.LEVEL_PORTABLE or fastbuild_enabled:
+                # fastbuild/portable-binary: sse2 CPU (>= Pentium 4)
+                self.status = self.build_status(optimize_level,
+                                                "sse2 CPU (>= Pentium 4)")
                 # SSE and SSE2 are core instructions on x64
                 # and consequently raise a warning message from compiler with this flag on x64.
                 if not build.machine_is_64bit:
                     build.env.Append(CCFLAGS='/arch:SSE2')
                 build.env.Append(CPPDEFINES=['__SSE__', '__SSE2__'])
             elif optimize_level == Optimize.LEVEL_NATIVE:
-                self.status = "native: tuned for this CPU (%s)" % build.machine
+                self.status = self.build_status(
+                    optimize_level, "tuned for this CPU (%s)" % build.machine)
                 build.env.Append(CCFLAGS='/favor:' + build.machine)
             elif optimize_level == Optimize.LEVEL_LEGACY:
-                self.status = "legacy: pure i386 code"
+                self.status = self.build_status(optimize_level,
+                                                "pure i386 code")
             else:
                 # Not possible to reach this code if enabled is written
                 # correctly.
@@ -1098,6 +1125,10 @@ class Optimize(Feature):
                 build.env.Append(CPPDEFINES=['__SSE__', '__SSE2__'])
 
         elif build.toolchain_is_gnu:
+            # Portable is fast enough on GNU.
+            if optimize_level == Optimize.LEVEL_FASTBUILD:
+                optimize_level = Optimize.LEVEL_PORTABLE
+
             # Common flags to all optimizations.
             # -ffast-math will pevent a performance penalty by denormals
             # (floating point values almost Zero are treated as Zero)
@@ -1109,28 +1140,32 @@ class Optimize(Feature):
             build.env.Append(CCFLAGS='-ffast-math')
             build.env.Append(CCFLAGS='-funroll-loops')
 
-            # set -fomit-frame-pointer when we don't profile.
+            # set -fomit-frame-pointer when we don't profile and are not using
+            # Clang sanitizers.
             # Note: It is only included in -O on machines where it does not
             # interfere with debugging
-            if not int(build.flags['profiling']):
+            if not int(build.flags['profiling']) and not Sanitizers().enabled(build):
                 build.env.Append(CCFLAGS='-fomit-frame-pointer')
 
             if optimize_level == Optimize.LEVEL_PORTABLE:
                 # portable: sse2 CPU (>= Pentium 4)
                 if build.architecture_is_x86:
-                    self.status = "portable: sse2 CPU (>= Pentium 4)"
+                    self.status = self.build_status(optimize_level,
+                                                    "sse2 CPU (>= Pentium 4)")
                     build.env.Append(CCFLAGS='-mtune=generic')
                     # -mtune=generic pick the most common, but compatible options.
                     # on arm platforms equivalent to -march=arch
                     if not build.machine_is_64bit:
                         # the sse flags are not set by default on 32 bit builds
                         # but are not supported on arm builds
-                        build.env.Append(CCFLAGS='-msse2 -mfpmath=sse')
+                        build.env.Append(CCFLAGS='-msse2')
+                        build.env.Append(CCFLAGS='-mfpmath=sse')
                 elif build.architecture_is_arm:
-                    self.status = "portable"
-                    build.env.Append(CCFLAGS='-mfloat-abi=hard -mfpu=neon')
+                    self.status = self.build_status(optimize_level)
+                    build.env.Append(CCFLAGS='-mfloat-abi=hard')
+                    build.env.Append(CCFLAGS='-mfpu=neon')
                 else:
-                    self.status = "portable"
+                    self.status = self.build_status(optimize_level)
                 # this sets macros __SSE2_MATH__ __SSE_MATH__ __SSE2__ __SSE__
                 # This should be our default build for distribution
                 # It's a little sketchy, but turning on SSE2 will gain
@@ -1143,32 +1178,37 @@ class Optimize(Feature):
                 # -- rryan 2/2011
                 # Note: SSE2 is a core part of x64 CPUs
             elif optimize_level == Optimize.LEVEL_NATIVE:
-                self.status = "native: tuned for this CPU (%s)" % build.machine
+                self.status = self.build_status(
+                    optimize_level, "tuned for this CPU (%s)" % build.machine)
                 build.env.Append(CCFLAGS='-march=native')
                 # http://en.chys.info/2010/04/what-exactly-marchnative-means/
                 # Note: requires gcc >= 4.2.0
                 # macros like __SSE2_MATH__ __SSE_MATH__ __SSE2__ __SSE__
                 # are set automaticaly
                 if build.architecture_is_x86 and not build.machine_is_64bit:
-                    # the sse flags are not set by default on 32 bit builds
-                    # but are not supported on arm builds
-                    build.env.Append(CCFLAGS='-msse2 -mfpmath=sse')
+                    # For 32 bit builds using gcc < 5.0, the mfpmath=sse is
+                    # not set by default (not supported on arm builds)
+                    # If -msse is not implicite set, it falls back to mfpmath=387
+                    # and a compiler warning is issued (tested with gcc 4.8.4)
+                    build.env.Append(CCFLAGS='-mfpmath=sse')
                 elif build.architecture_is_arm:
-                    self.status = "portable"
-                    build.env.Append(CCFLAGS='-mfloat-abi=hard -mfpu=neon')
+                    self.status = self.build_status(optimize_level)
+                    build.env.Append(CCFLAGS='-mfloat-abi=hard')
+                    build.env.Append(CCFLAGS='-mfpu=neon')
             elif optimize_level == Optimize.LEVEL_LEGACY:
                 if build.architecture_is_x86:
-                    self.status = "legacy: pure i386 code"
+                    self.status = self.build_status(
+                        optimize_level, "pure i386 code")
                     build.env.Append(CCFLAGS='-mtune=generic')
                     # -mtune=generic pick the most common, but compatible options.
                     # on arm platforms equivalent to -march=arch
                 else:
-                    self.status = "legacy"
+                    self.status = self.build_status(optimize_level)
             else:
                 # Not possible to reach this code if enabled is written
                 # correctly.
                 raise Exception("optimize={} is not supported. "
-                                "Use portable, native, legacy or off"
+                                "Use portable, native, fastbuild, legacy or off"
                                 .format(optimize_level))
 
             # what others do:
@@ -1261,3 +1301,27 @@ class Battery(Feature):
 
     def depends(self, build):
         return [depends.IOKit, depends.UPower]
+
+class QtKeychain(Feature):
+    def description(self):
+        return "Secure credentials storage support for Live Broadcasting profiles"
+
+    def enabled(self, build):
+        build.flags['qtkeychain'] = util.get_flags(build.env, 'qtkeychain', 0)
+        if int(build.flags['qtkeychain']):
+            return True
+        return False
+
+    def add_options(self, build, vars):
+        vars.Add('qtkeychain', 'Set to 1 to enable secure credentials storage support for Live Broadcasting profiles', 0)
+
+    def configure(self, build, conf):
+        if not self.enabled(build):
+            return
+        build.env.Append(CPPDEFINES='__QTKEYCHAIN__')
+
+    def sources(self, build):
+        return []
+
+    def depends(self, build):
+        return [depends.QtKeychain]

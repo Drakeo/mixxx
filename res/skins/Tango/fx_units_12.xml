@@ -1,0 +1,85 @@
+<!--
+Description:
+  Container for EffectUnits 1 & 2.
+  Units are pushed apart by spacers, see fx_units_spacer.xml.
+-->
+<Template>
+  <SetVariable name="FxRack">EffectRack1</SetVariable>
+  <SetVariable name="FxRackNum">1</SetVariable>
+  <WidgetGroup>
+    <ObjectName>FxUnits12</ObjectName>
+    <SizePolicy>me,max</SizePolicy>
+    <Layout>horizontal</Layout>
+    <Children>
+
+      <WidgetGroup><!-- EffectUnit 1 maxi -->
+        <Layout>vertical</Layout>
+        <SizePolicy>min,max</SizePolicy>
+        <Children>
+          <Template src="skin:fx_unit_left.xml">
+            <SetVariable name="FxUnitNum">1</SetVariable>
+          </Template>
+          <WidgetGroup><Size>1min,5f</Size></WidgetGroup>
+        </Children>
+        <Connection>
+          <ConfigKey persist="true">[EffectRack1_EffectUnit1],show_parameters</ConfigKey>
+          <BindProperty>visible</BindProperty>
+        </Connection>
+      </WidgetGroup>
+
+      <WidgetGroup><!-- EffectUnit 1 mini -->
+        <Layout>vertical</Layout>
+        <SizePolicy>min,me</SizePolicy>
+        <Children>
+          <Template src="skin:fx_unit_left_mini.xml">
+            <SetVariable name="FxUnitNum">1</SetVariable>
+          </Template>
+          <WidgetGroup><Size>1min,5me</Size></WidgetGroup>
+        </Children>
+        <Connection>
+          <ConfigKey persist="true">[EffectRack1_EffectUnit1],show_parameters</ConfigKey>
+          <Transform><Not/></Transform>
+          <BindProperty>visible</BindProperty>
+        </Connection>
+      </WidgetGroup>
+
+      <Template src="skin:spacer_fx_units.xml"/>
+
+      <WidgetGroup><!-- EffectUnit 2 maxi -->
+        <Layout>vertical</Layout>
+        <SizePolicy>min,max</SizePolicy>
+        <Children>
+          <Template src="skin:fx_unit_right.xml">
+            <SetVariable name="FxUnitNum">2</SetVariable>
+          </Template>
+          <WidgetGroup><Size>1min,5f</Size></WidgetGroup>
+        </Children>
+        <Connection>
+          <ConfigKey persist="true">[EffectRack1_EffectUnit2],show_parameters</ConfigKey>
+          <BindProperty>visible</BindProperty>
+        </Connection>
+      </WidgetGroup>
+
+      <WidgetGroup><!-- EffectUnit 2 mini -->
+        <Layout>vertical</Layout>
+        <SizePolicy>min,me</SizePolicy>
+        <Children>
+          <Template src="skin:fx_unit_right_mini.xml">
+            <SetVariable name="FxUnitNum">2</SetVariable>
+          </Template>
+          <WidgetGroup><Size>1min,5me</Size></WidgetGroup>
+        </Children>
+        <Connection>
+          <ConfigKey persist="true">[EffectRack1_EffectUnit2],show_parameters</ConfigKey>
+          <Transform><Not/></Transform>
+          <BindProperty>visible</BindProperty>
+        </Connection>
+      </WidgetGroup>
+
+    </Children>
+    <Connection>
+      <ConfigKey persist="true">[EffectRack1],show</ConfigKey>
+      <BindProperty>visible</BindProperty>
+    </Connection>
+  </WidgetGroup><!-- /EffectUnits 1 & 2 -->
+</Template>

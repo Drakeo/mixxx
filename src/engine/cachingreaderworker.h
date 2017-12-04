@@ -35,19 +35,18 @@ enum ReaderStatus {
 typedef struct ReaderStatusUpdate {
     ReaderStatus status;
     CachingReaderChunk* chunk;
-    SINT maxReadableFrameIndex;
+    mixxx::IndexRange readableFrameIndexRange;
     ReaderStatusUpdate()
         : status(INVALID)
-        , chunk(nullptr)
-        , maxReadableFrameIndex(mixxx::AudioSource::getMinFrameIndex()) {
+        , chunk(nullptr) {
     }
     ReaderStatusUpdate(
             ReaderStatus statusArg,
             CachingReaderChunk* chunkArg,
-            SINT maxReadableFrameIndexArg)
+            const mixxx::IndexRange& readableFrameIndexRangeArg)
         : status(statusArg)
         , chunk(chunkArg)
-        , maxReadableFrameIndex(maxReadableFrameIndexArg) {
+        , readableFrameIndexRange(readableFrameIndexRangeArg) {
     }
 } ReaderStatusUpdate;
 
@@ -88,7 +87,8 @@ class CachingReaderWorker : public EngineWorker {
     // Queue of Tracks to load, and the corresponding lock. Must acquire the
     // lock to touch.
     QMutex m_newTrackMutex;
-    TrackPointer m_newTrack;
+    bool m_newTrackAvailable;
+    TrackPointer m_pNewTrack;
 
     // Internal method to load a track. Emits trackLoaded when finished.
     void loadTrack(const TrackPointer& pTrack);
@@ -99,12 +99,16 @@ class CachingReaderWorker : public EngineWorker {
     // The current audio source of the track loaded
     mixxx::AudioSourcePointer m_pAudioSource;
 
+    // Temporary buffer for reading samples from all channels
+    // before conversion to a stereo signal.
+    mixxx::SampleBuffer m_tempReadBuffer;
+
     // The maximum readable frame index of the AudioSource. Might
     // be adjusted when decoding errors occur to prevent reading
     // the same chunk(s) over and over again.
     // This frame index references the frame that follows the
     // last frame with readable sample data.
-    SINT m_maxReadableFrameIndex;
+    mixxx::IndexRange m_readableFrameIndexRange;
 
     QAtomicInt m_stop;
 };

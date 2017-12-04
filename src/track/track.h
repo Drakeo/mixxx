@@ -1,28 +1,23 @@
-#ifndef TRACK_TRACK_H
-#define TRACK_TRACK_H
+#pragma once
 
 #include <QAtomicInt>
 #include <QFileInfo>
 #include <QList>
 #include <QMutex>
 #include <QObject>
-#include <QSharedPointer>
 
 #include "library/dao/cue.h"
-#include "library/coverart.h"
-#include "proto/keys.pb.h"
 #include "track/beats.h"
-#include "track/keys.h"
-#include "track/trackid.h"
-#include "track/playcounter.h"
-#include "track/trackmetadata.h"
+#include "track/trackrecord.h"
+#include "util/memory.h"
 #include "util/sandbox.h"
-#include "util/duration.h"
 #include "waveform/waveform.h"
 
-class Track;
-typedef QSharedPointer<Track> TrackPointer;
-typedef QWeakPointer<Track> TrackWeakPointer;
+#include "sources/metadatasource.h"
+
+
+// forward declaration(s)
+class TrackPointer;
 
 class Track : public QObject {
     Q_OBJECT
@@ -95,10 +90,9 @@ class Track : public QObject {
     // Returns whether the file exists on disk or not.
     bool exists() const;
 
-    // Returns the file type
-    QString getType() const;
-    // Sets the file type. Only used by TrackDAO and SoundSourceProxy!
+    // File/format type
     void setType(const QString&);
+    QString getType() const;
 
     void setChannels(int iChannels);
     // Get number of channels
@@ -117,6 +111,7 @@ class Track : public QObject {
     // Returns the bitrate as a string
     QString getBitrateText() const;
 
+    void setDuration(mixxx::Duration duration);
     void setDuration(double duration);
     double getDuration() const {
         return getDuration(DurationRounding::NONE);
@@ -157,9 +152,9 @@ class Track : public QObject {
     mixxx::ReplayGain getReplayGain() const;
 
     // Indicates if the metadata has been parsed from file tags.
-    bool isHeaderParsed() const;
-    // Only used by TrackDAO!
-    void setHeaderParsed(bool headerParsed);
+    bool isMetadataSynchronized() const;
+    // Only used by a free function in TrackDAO!
+    void setMetadataSynchronized(bool metadataSynchronized);
 
     void setDateAdded(const QDateTime& dateAdded);
     QDateTime getDateAdded() const;
@@ -234,7 +229,7 @@ class Track : public QObject {
     // Output a formatted string with artist and title.
     QString getInfo() const;
 
-    ConstWaveformPointer getWaveform();
+    ConstWaveformPointer getWaveform() const;
     void setWaveform(ConstWaveformPointer pWaveform);
 
     ConstWaveformPointer getWaveformSummary() const;
@@ -243,13 +238,13 @@ class Track : public QObject {
     void setAnalyzerProgress(int progress);
     int getAnalyzerProgress() const;
 
-    /** Save the cue point (in samples... I think) */
-    void setCuePoint(float cue);
+    // Save the cue point in samples
+    void setCuePoint(double cue);
     // Get saved the cue point
-    float getCuePoint() const;
+    double getCuePoint() const;
 
     // Calls for managing the track's cue points
-    CuePointer addCue();
+    CuePointer createAndAddCue();
     void removeCue(const CuePointer& pCue);
     QList<CuePointer> getCuePoints() const;
     void setCuePoints(const QList<CuePointer>& cuePoints);
@@ -262,9 +257,7 @@ class Track : public QObject {
     // Set the track's Beats
     void setBeats(BeatsPointer beats);
 
-    void resetKeys() {
-        setKeys(Keys());
-    }
+    void resetKeys();
     void setKeys(const Keys& keys);
     Keys getKeys() const;
     void setKey(mixxx::track::io::key::ChromaticKey key,
@@ -274,21 +267,36 @@ class Track : public QObject {
     mixxx::track::io::key::ChromaticKey getKey() const;
     QString getKeyText() const;
 
-    void setCoverInfo(const CoverInfo& cover);
+    void setCoverInfo(const CoverInfoRelative& coverInfoRelative);
+    void setCoverInfo(const CoverInfo& coverInfo);
+    void setCoverInfo(const CoverArt& coverArt);
+
     CoverInfo getCoverInfo() const;
+
+    quint16 getCoverHash() const;
 
     // Set/get track metadata and cover art (optional) all at once.
     void setTrackMetadata(
-            const mixxx::TrackMetadata& trackMetadata,
-            bool parsedFromFile);
+            mixxx::TrackMetadata trackMetadata,
+            QDateTime metadataSynchronized);
     void getTrackMetadata(
             mixxx::TrackMetadata* pTrackMetadata,
-            bool* pHeaderParsed) const;
+            bool* pMetadataSynchronized = nullptr,
+            bool* pDirty = nullptr) const;
+
+    void getTrackRecord(
+            mixxx::TrackRecord* pTrackRecord,
+            bool* pDirty = nullptr) const;
 
     // Mark the track dirty if it isn't already.
     void markDirty();
     // Mark the track clean if it isn't already.
     void markClean();
+
+    // Explicitly request to export the track's metadata. The actual
+    // export is deferred to prevent race conditions when writing into
+    // files that are still opened for reading.
+    void markForMetadataExport();
 
     // Called when the shared pointer reference count for a library TrackPointer
     // drops to zero.
@@ -326,6 +334,10 @@ class Track : public QObject {
           const SecurityTokenPointer& pSecurityToken,
           TrackId trackId);
 
+    // Set a unique identifier for the track. Only used by
+    // TrackDAO!
+    void initId(TrackId id); // write-once
+
     // Set whether the TIO is dirty or not and unlock before emitting
     // any signals. This must only be called from member functions
     // while the TIO is locked.
@@ -333,17 +345,22 @@ class Track : public QObject {
     void setDirtyAndUnlock(QMutexLocker* pLock, bool bDirty);
 
     void setBeatsAndUnlock(QMutexLocker* pLock, BeatsPointer pBeats);
-    void setKeysAndUnlock(QMutexLocker* pLock, const Keys& keys);
 
-    // Set a unique identifier for the track.
-    // Only used by TrackDAO!
-    void setId(TrackId id);
+    void afterKeysUpdated(QMutexLocker* pLock);
 
     enum class DurationRounding {
         SECONDS, // rounded to full seconds
         NONE     // unmodified
     };
     double getDuration(DurationRounding rounding) const;
+
+    enum class ExportMetadataResult {
+        Succeeded,
+        Failed,
+        Skipped,
+    };
+    ExportMetadataResult exportMetadata(
+            mixxx::MetadataSourcePointer pMetadataSource);
 
     // The file
     const QFileInfo m_fileInfo;
@@ -357,40 +374,15 @@ class Track : public QObject {
     // Mutex protecting access to object
     mutable QMutex m_qMutex;
 
-    // The unique ID of track. This value is only set once after the track
-    // has been inserted or is loaded from the library DB.
-    TrackId m_id;
+    mixxx::TrackRecord m_record;
 
     // Flag that indicates whether or not the TIO has changed. This is used by
     // TrackDAO to determine whether or not to write the Track back.
     bool m_bDirty;
 
-    // File type
-    QString m_sType;
-
-    // Track metadata
-    mixxx::TrackMetadata m_metadata;
-
-    // URL (used in promo track)
-    QString m_sURL;
-
-    // Track rating
-    int m_iRating;
-
-    // Cue point in samples or something
-    float m_fCuePoint;
-    // Date the track was added to the library
-    QDateTime m_dateAdded;
-
-    PlayCounter m_playCounter;
-
-    Keys m_keys;
-
-    // Various boolean flags. Please refer to the corresponding
-    // setter/getter functions for detailed information about
-    // their usage.
-    bool m_bHeaderParsed;
-    bool m_bBpmLocked;
+    // Flag indicating that the user has explicitly requested to save
+    // the metadata.
+    bool m_bExportMetadata;
 
     // The list of cue points for the track
     QList<CuePointer> m_cuePoints;
@@ -404,9 +396,29 @@ class Track : public QObject {
 
     QAtomicInt m_analyzerProgress; // in 0.1%
 
-    CoverInfo m_coverInfo;
-
     friend class TrackDAO;
+    friend class SoundSourceProxy;
 };
 
-#endif // TRACK_TRACK_H
+typedef std::weak_ptr<Track> TrackWeakPointer;
+
+class TrackPointer: public std::shared_ptr<Track> {
+  public:
+    TrackPointer() = default;
+    explicit TrackPointer(TrackWeakPointer pTrack)
+        : std::shared_ptr<Track>(pTrack.lock()) {
+    }
+    explicit TrackPointer(Track* pTrack)
+        : std::shared_ptr<Track>(pTrack, deleteLater) {
+    }
+    TrackPointer(Track* pTrack, void (*deleter)(Track*))
+        : std::shared_ptr<Track>(pTrack, deleter) {
+    }
+
+  private:
+    static void deleteLater(Track* pTrack) {
+        if (pTrack) {
+            pTrack->deleteLater();
+        }
+    }
+};

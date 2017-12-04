@@ -21,17 +21,17 @@ class LinkwitzRiley8EQEffectGroupState {
 
     void setFilters(int sampleRate, int lowFreq, int highFreq);
 
-    EngineFilterLinkwtzRiley8Low* m_low1;
-    EngineFilterLinkwtzRiley8High* m_high1;
-    EngineFilterLinkwtzRiley8Low* m_low2;
-    EngineFilterLinkwtzRiley8High* m_high2;
+    EngineFilterLinkwitzRiley8Low* m_low1;
+    EngineFilterLinkwitzRiley8High* m_high1;
+    EngineFilterLinkwitzRiley8Low* m_low2;
+    EngineFilterLinkwitzRiley8High* m_high2;
 
     double old_low;
     double old_mid;
     double old_high;
 
     CSAMPLE* m_pLowBuf;
-    CSAMPLE* m_pBandBuf;
+    CSAMPLE* m_pMidBuf;
     CSAMPLE* m_pHighBuf;
 
     unsigned int m_oldSampleRate;

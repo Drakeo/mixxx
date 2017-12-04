@@ -19,7 +19,8 @@
 // The SampleBuffers format enables antialiasing.
 WSpinny::WSpinny(QWidget* parent, const QString& group,
                  UserSettingsPointer pConfig,
-                 VinylControlManager* pVCMan)
+                 VinylControlManager* pVCMan,
+                 BaseTrackPlayer* pPlayer)
         : QGLWidget(QGLFormat(QGL::SampleBuffers), parent, SharedGLContext::getWidget()),
           WBaseWidget(this),
           m_group(group),
@@ -59,7 +60,10 @@ WSpinny::WSpinny(QWidget* parent, const QString& group,
           m_dRotationsPerSecond(0.),
           m_bClampFailedWarning(false),
           m_bGhostPlayback(false),
-          m_bWidgetDirty(false) {
+          m_bWidgetDirty(false),
+          m_pPlayer(pPlayer),
+          m_pDlgCoverArt(new DlgCoverArtFullSize(parent, pPlayer)),
+          m_pCoverMenu(new WCoverArtMenu(this)) {
 #ifdef __VINYLCONTROL__
     m_pVCManager = pVCMan;
 #endif
@@ -77,6 +81,19 @@ WSpinny::WSpinny(QWidget* parent, const QString& group,
                                           const CoverInfo&, QPixmap, bool)));
     }
 
+    if (m_pPlayer != nullptr) {
+        connect(m_pPlayer, SIGNAL(newTrackLoaded(TrackPointer)),
+                this, SLOT(slotLoadTrack(TrackPointer)));
+        connect(m_pPlayer, SIGNAL(loadingTrack(TrackPointer, TrackPointer)),
+                this, SLOT(slotLoadingTrack(TrackPointer, TrackPointer)));
+        // just in case a track is already loaded
+        slotLoadTrack(m_pPlayer->getLoadedTrack());
+    }
+
+    connect(m_pCoverMenu, SIGNAL(coverInfoSelected(const CoverInfo&)),
+        this, SLOT(slotCoverInfoSelected(const CoverInfo&)));
+    connect(m_pCoverMenu, SIGNAL(reloadCoverArt()),
+        this, SLOT(slotReloadCoverArt()));
 }
 
 WSpinny::~WSpinny() {
@@ -127,7 +144,8 @@ void WSpinny::onVinylSignalQualityUpdate(const VinylSignalQualityReport& report)
 void WSpinny::setup(const QDomNode& node, const SkinContext& context) {
     // Set images
     QDomElement backPathElement = context.selectElement(node, "PathBackground");
-    m_pBgImage = WImageStore::getImage(context.getPixmapSource(backPathElement));
+    m_pBgImage = WImageStore::getImage(context.getPixmapSource(backPathElement),
+                                       context.getScaleFactor());
     Paintable::DrawMode bgmode = context.selectScaleMode(backPathElement,
                                                          Paintable::FIXED);
     if (m_pBgImage && !m_pBgImage->isNull() && bgmode == Paintable::FIXED) {
@@ -135,16 +153,19 @@ void WSpinny::setup(const QDomNode& node, const SkinContext& context) {
     } else {
         setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::MinimumExpanding);
     }
-    m_pMaskImage = WImageStore::getImage(context.getPixmapSource(
-                        context.selectNode(node, "PathMask")));
-    m_pFgImage = WImageStore::getImage(context.getPixmapSource(
-                        context.selectNode(node,"PathForeground")));
+    m_pMaskImage = WImageStore::getImage(
+            context.getPixmapSource(context.selectNode(node, "PathMask")),
+            context.getScaleFactor());
+    m_pFgImage = WImageStore::getImage(
+            context.getPixmapSource(context.selectNode(node,"PathForeground")),
+            context.getScaleFactor());
     if (m_pFgImage && !m_pFgImage->isNull()) {
         m_fgImageScaled = m_pFgImage->scaled(
                 size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
     }
-    m_pGhostImage = WImageStore::getImage(context.getPixmapSource(
-                        context.selectNode(node,"PathGhost")));
+    m_pGhostImage = WImageStore::getImage(
+            context.getPixmapSource(context.selectNode(node,"PathGhost")),
+            context.getScaleFactor());
     if (m_pGhostImage && !m_pGhostImage->isNull()) {
         m_ghostImageScaled = m_pGhostImage->scaled(
                 size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
@@ -226,7 +247,7 @@ void WSpinny::maybeUpdate() {
 
 void WSpinny::slotLoadTrack(TrackPointer pTrack) {
     if (m_loadedTrack) {
-        disconnect(m_loadedTrack.data(), SIGNAL(coverArtUpdated()),
+        disconnect(m_loadedTrack.get(), SIGNAL(coverArtUpdated()),
                    this, SLOT(slotTrackCoverArtUpdated()));
     }
     m_lastRequestedCover = CoverInfo();
@@ -234,7 +255,7 @@ void WSpinny::slotLoadTrack(TrackPointer pTrack) {
     m_loadedCoverScaled = QPixmap();
     m_loadedTrack = pTrack;
     if (m_loadedTrack) {
-        connect(m_loadedTrack.data(), SIGNAL(coverArtUpdated()),
+        connect(m_loadedTrack.get(), SIGNAL(coverArtUpdated()),
                 this, SLOT(slotTrackCoverArtUpdated()));
     }
 
@@ -244,10 +265,10 @@ void WSpinny::slotLoadTrack(TrackPointer pTrack) {
 void WSpinny::slotLoadingTrack(TrackPointer pNewTrack, TrackPointer pOldTrack) {
     Q_UNUSED(pNewTrack);
     if (m_loadedTrack && pOldTrack == m_loadedTrack) {
-        disconnect(m_loadedTrack.data(), SIGNAL(coverArtUpdated()),
+        disconnect(m_loadedTrack.get(), SIGNAL(coverArtUpdated()),
                    this, SLOT(slotTrackCoverArtUpdated()));
     }
-    m_loadedTrack = TrackPointer();
+    m_loadedTrack.reset();
     m_lastRequestedCover = CoverInfo();
     m_loadedCover = QPixmap();
     m_loadedCoverScaled = QPixmap();
@@ -255,7 +276,9 @@ void WSpinny::slotLoadingTrack(TrackPointer pNewTrack, TrackPointer pOldTrack) {
 }
 
 void WSpinny::slotTrackCoverArtUpdated() {
-    CoverArtCache::requestCover(m_loadedTrack.data(), this);
+    if (m_loadedTrack) {
+        CoverArtCache::requestCover(*m_loadedTrack, this);
+    }
 }
 
 void WSpinny::slotCoverFound(const QObject* pRequestor,
@@ -265,7 +288,7 @@ void WSpinny::slotCoverFound(const QObject* pRequestor,
     Q_UNUSED(fromCache);
 
     if (pRequestor == this && m_loadedTrack &&
-            m_loadedTrack->getCoverInfo().hash == info.hash) {
+            m_loadedTrack->getCoverHash() == info.hash) {
         qDebug() << "WSpinny::slotCoverFound" << pRequestor << info
                  << pixmap.size();
         m_loadedCover = pixmap;
@@ -274,6 +297,21 @@ void WSpinny::slotCoverFound(const QObject* pRequestor,
     }
 }
 
+void WSpinny::slotCoverInfoSelected(const CoverInfo& coverInfo) {
+    if (m_loadedTrack != nullptr) {
+        // Will trigger slotTrackCoverArtUpdated().
+        m_loadedTrack->setCoverInfo(coverInfo);
+    }
+}
+
+void WSpinny::slotReloadCoverArt() {
+    if (m_loadedTrack != nullptr) {
+        CoverArtCache* pCache = CoverArtCache::instance();
+        if (pCache) {
+            pCache->requestGuessCover(m_loadedTrack);
+        }
+    }
+}
 
 void WSpinny::paintEvent(QPaintEvent *e) {
     Q_UNUSED(e); //ditch unused param warning
@@ -421,8 +459,7 @@ double WSpinny::calculateAngle(double playpos) {
 
 /** Given a normalized playpos, calculate the integer number of rotations
     that it would take to wind the vinyl to that position. */
-int WSpinny::calculateFullRotations(double playpos)
-{
+int WSpinny::calculateFullRotations(double playpos) {
     if (isnan(playpos)) {
         return 0;
     }
@@ -438,8 +475,7 @@ int WSpinny::calculateFullRotations(double playpos)
 }
 
 //Inverse of calculateAngle()
-double WSpinny::calculatePositionFromAngle(double angle)
-{
+double WSpinny::calculatePositionFromAngle(double angle) {
     if (isnan(angle)) {
         return 0.0;
     }
@@ -498,8 +534,8 @@ void WSpinny::mouseMoveEvent(QMouseEvent * e) {
     int y = e->y();
     int x = e->x();
 
-    //Keeping these around in case we want to switch to control relative
-    //to the original mouse position.
+    // Keeping these around in case we want to switch to control relative
+    // to the original mouse position.
     //int dX = x-m_iStartMouseX;
     //int dY = y-m_iStartMouseY;
 
@@ -511,10 +547,10 @@ void WSpinny::mouseMoveEvent(QMouseEvent * e) {
     //qDebug() << "c_x:" << c_x << "c_y:" << c_y <<
     //            "dX:" << dX << "dY:" << dY;
 
-    //When we finish one full rotation (clockwise or anticlockwise),
-    //we'll need to manually add/sub 360 degrees because atan2()'s range is
-    //only within -180 to 180 degrees. We need a wider range so your position
-    //in the song can be tracked.
+    // When we finish one full rotation (clockwise or anticlockwise),
+    // we'll need to manually add/sub 360 degrees because atan2()'s range is
+    // only within -180 to 180 degrees. We need a wider range so your position
+    // in the song can be tracked.
     if (m_dPrevTheta > 100 && theta < 0) {
         m_iFullRotations++;
     } else if (m_dPrevTheta < -100 && theta > 0) {
@@ -527,7 +563,8 @@ void WSpinny::mouseMoveEvent(QMouseEvent * e) {
     //qDebug() << "c t:" << theta << "pt:" << m_dPrevTheta <<
     //            "icr" << m_iFullRotations;
 
-    if ((e->buttons() & Qt::LeftButton || e->buttons() & Qt::RightButton) && !m_bVinylActive) {
+    if (((e->buttons() & Qt::LeftButton) || (e->buttons() & Qt::RightButton)) &&
+            !m_bVinylActive) {
         //Convert deltaTheta into a percentage of song length.
         double absPos = calculatePositionFromAngle(theta);
         double absPosInSamples = absPos * m_pTrackSamples->get();
@@ -538,40 +575,57 @@ void WSpinny::mouseMoveEvent(QMouseEvent * e) {
     }
 }
 
-void WSpinny::mousePressEvent(QMouseEvent * e)
-{
-    int y = e->y();
-    int x = e->x();
-
-    m_iStartMouseX = x;
-    m_iStartMouseY = y;
-
-    //don't do anything if vinyl control is active
-    if (m_bVinylActive) {
+void WSpinny::mousePressEvent(QMouseEvent * e) {
+    if (m_loadedTrack == nullptr) {
         return;
     }
 
-    if (e->button() == Qt::LeftButton || e->button() == Qt::RightButton) {
-        QApplication::setOverrideCursor(QCursor(Qt::ClosedHandCursor));
+    if (m_pDlgCoverArt->isVisible()) {
+        m_pDlgCoverArt->close();
+        return;
+    }
 
-        // Coordinates from center of widget
-        double c_x = x - width()/2;
-        double c_y = y - height()/2;
-        double theta = (180.0/M_PI)*atan2(c_x, -c_y);
-        m_dPrevTheta = theta;
-        m_iFullRotations = calculateFullRotations(m_pPlayPos->get());
-        theta += m_iFullRotations * 360.0;
-        m_dInitialPos = calculatePositionFromAngle(theta) * m_pTrackSamples->get();
+    if (m_pCoverMenu->isVisible()) {
+        m_pCoverMenu->close();
+        return;
+    }
 
-        m_pScratchPos->set(0);
-        m_pScratchToggle->set(1.0);
+    if (e->button() == Qt::LeftButton) {
+        int y = e->y();
+        int x = e->x();
 
-        if (e->button() == Qt::RightButton) {
-            m_pSlipEnabled->set(1.0);
+        m_iStartMouseX = x;
+        m_iStartMouseY = y;
+
+        //don't do anything if vinyl control is active
+        if (m_bVinylActive) {
+            return;
         }
 
-        // Trigger a mouse move to immediately line up the vinyl with the cursor
-        mouseMoveEvent(e);
+        if (e->button() == Qt::LeftButton || e->button() == Qt::RightButton) {
+            QApplication::setOverrideCursor(QCursor(Qt::ClosedHandCursor));
+
+            // Coordinates from center of widget
+            double c_x = x - width()/2;
+            double c_y = y - height()/2;
+            double theta = (180.0/M_PI)*atan2(c_x, -c_y);
+            m_dPrevTheta = theta;
+            m_iFullRotations = calculateFullRotations(m_pPlayPos->get());
+            theta += m_iFullRotations * 360.0;
+            m_dInitialPos = calculatePositionFromAngle(theta) * m_pTrackSamples->get();
+
+            m_pScratchPos->set(0);
+            m_pScratchToggle->set(1.0);
+
+            // Trigger a mouse move to immediately line up the vinyl with the cursor
+            mouseMoveEvent(e);
+        }
+    } else {
+        if (!m_loadedCover.isNull()) {
+            m_pDlgCoverArt->init(m_loadedTrack);
+        } else if (!m_pDlgCoverArt->isVisible()) {
+            m_pCoverMenu->popup(e->pos());
+        }
     }
 }
 
@@ -581,9 +635,6 @@ void WSpinny::mouseReleaseEvent(QMouseEvent * e)
         QApplication::restoreOverrideCursor();
         m_pScratchToggle->set(0.0);
         m_iFullRotations = 0;
-        if (e->button() == Qt::RightButton) {
-            m_pSlipEnabled->set(0.0);
-        }
     }
 }
 

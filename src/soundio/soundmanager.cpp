@@ -25,11 +25,14 @@
 #endif // ifdef __PORTAUDIO__
 
 #include "control/controlobject.h"
+#include "control/controlproxy.h"
 #include "engine/enginebuffer.h"
 #include "engine/enginemaster.h"
 #include "engine/sidechain/enginenetworkstream.h"
+#include "engine/sidechain/enginesidechain.h"
 #include "soundio/sounddevice.h"
 #include "soundio/sounddevicenetwork.h"
+#include "soundio/sounddevicenotfound.h"
 #include "soundio/sounddeviceportaudio.h"
 #include "soundio/soundmanagerutil.h"
 #include "util/cmdlineargs.h"
@@ -44,6 +47,8 @@ typedef PaError (*SetJackClientName)(const char *name);
 #endif
 
 namespace {
+
+#define CPU_OVERLOAD_DURATION 500 // in ms
 
 struct DeviceMode {
     SoundDevice* device;
@@ -64,12 +69,22 @@ SoundManager::SoundManager(UserSettingsPointer pConfig,
           m_paInitialized(false),
           m_jackSampleRate(-1),
 #endif
-          m_pErrorDevice(NULL) {
+          m_pErrorDevice(NULL),
+          m_underflowHappened(0) {
     // TODO(xxx) some of these ControlObject are not needed by soundmanager, or are unused here.
     // It is possible to take them out?
-    m_pControlObjectSoundStatusCO = new ControlObject(ConfigKey("[SoundManager]", "status"));
+    m_pControlObjectSoundStatusCO = new ControlObject(
+            ConfigKey("[SoundManager]", "status"));
     m_pControlObjectSoundStatusCO->set(SOUNDMANAGER_DISCONNECTED);
-    m_pControlObjectVinylControlGainCO = new ControlObject(ConfigKey(VINYL_PREF_KEY, "gain"));
+
+    m_pControlObjectVinylControlGainCO = new ControlObject(
+            ConfigKey(VINYL_PREF_KEY, "gain"));
+
+    m_pMasterAudioLatencyOverloadCount = new ControlProxy("[Master]",
+            "audio_latency_overload_count");
+
+    m_pMasterAudioLatencyOverload = new ControlProxy("[Master]",
+            "audio_latency_overload");
 
     //Hack because PortAudio samplerate enumeration is slow as hell on Linux (ALSA dmix sucks, so we can't blame PortAudio)
     m_samplerates.push_back(44100);
@@ -104,6 +119,8 @@ SoundManager::~SoundManager() {
 
     delete m_pControlObjectSoundStatusCO;
     delete m_pControlObjectVinylControlGainCO;
+    delete m_pMasterAudioLatencyOverloadCount;
+    delete m_pMasterAudioLatencyOverload;
 }
 
 QList<SoundDevice*> SoundManager::getDeviceList(
@@ -167,8 +184,6 @@ void SoundManager::closeDevices(bool sleepAfterClosing) {
 #endif
     }
 
-    m_pErrorDevice = NULL;
-
     // TODO(rryan): Should we do this before SoundDevice::close()? No! Because
     // then the callback may be running when we call
     // onInputDisconnected/onOutputDisconnected.
@@ -180,6 +195,7 @@ void SoundManager::closeDevices(bool sleepAfterClosing) {
                          m_registeredDestinations.find(in);
                  it != m_registeredDestinations.end() && it.key() == in; ++it) {
                 it.value()->onInputUnconfigured(in);
+                m_pMaster->onInputDisconnected(in);
             }
         }
         foreach (AudioOutput out, pDevice->outputs()) {
@@ -216,6 +232,7 @@ void SoundManager::clearDeviceList(bool sleepAfterClosing) {
         SoundDevice* dev = m_devices.takeLast();
         delete dev;
     }
+    m_pErrorDevice = NULL;
 
 #ifdef __PORTAUDIO__
     if (m_paInitialized) {
@@ -311,16 +328,16 @@ void SoundManager::queryDevicesPortaudio() {
 void SoundManager::queryDevicesMixxx() {
     SoundDeviceNetwork* currentDevice = new SoundDeviceNetwork(
             m_pConfig, this, m_pNetworkStream);
-    m_devices.push_back(currentDevice);
+    m_devices.append(currentDevice);
 }
 
-Result SoundManager::setupDevices() {
+SoundDeviceError SoundManager::setupDevices() {
     // NOTE(rryan): Big warning: This function is concurrent with calls to
     // pushBuffer and onDeviceOutputCallback until closeDevices() below.
 
     qDebug() << "SoundManager::setupDevices()";
     m_pControlObjectSoundStatusCO->set(SOUNDMANAGER_CONNECTING);
-    Result err = OK;
+    SoundDeviceError err = SOUNDDEVICE_ERROR_OK;
     // NOTE(rryan): Do not clear m_pClkRefDevice here. If we didn't touch the
     // SoundDevice that is the clock reference, then it is safe to leave it as
     // it was. Clearing it causes the engine to stop being processed which
@@ -328,14 +345,8 @@ Result SoundManager::setupDevices() {
     // latencies) when changing devices.
     //m_pClkRefDevice = NULL;
     m_pErrorDevice = NULL;
-    int devicesAttempted = 0;
-    int devicesOpened = 0;
     int outputDevicesOpened = 0;
     int inputDevicesOpened = 0;
-
-    // filter out any devices in the config we don't actually have
-    m_config.filterOutputs(this);
-    m_config.filterInputs(this);
 
     // NOTE(rryan): Documenting for future people touching this class. If you
     // would like to remove the fact that we close all the devices first and
@@ -354,9 +365,16 @@ Result SoundManager::setupDevices() {
     // compute the new one then atomically hand off below.
     SoundDevice* pNewMasterClockRef = NULL;
 
+    m_pMasterAudioLatencyOverloadCount->set(0);
+
+    // load with all configured devices. 
+    // all found devices are removed below 
+    QSet<QString> devicesNotFound = m_config.getDevices();
+
     // pair is isInput, isOutput
     QList<DeviceMode> toOpen;
     bool haveOutput = false;
+    // loop over all available devices
     foreach (SoundDevice* device, m_devices) {
         DeviceMode mode = {device, false, false};
         device->clearInputs();
@@ -368,8 +386,8 @@ Result SoundManager::setupDevices() {
             // TODO(bkgood) look into allocating this with the frames per
             // buffer value from SMConfig
             AudioInputBuffer aib(in, SampleUtil::alloc(MAX_BUFFER_LEN));
-            err = device->addInput(aib) != SOUNDDEVICE_ERROR_OK ? ERR : OK;
-            if (err != OK) {
+            err = device->addInput(aib);
+            if (err != SOUNDDEVICE_ERROR_OK) {
                 delete [] aib.getBuffer();
                 goto closeAndError;
             }
@@ -378,10 +396,11 @@ Result SoundManager::setupDevices() {
 
             // Check if any AudioDestination is registered for this AudioInput
             // and call the onInputConnected method.
-            for (QHash<AudioInput, AudioDestination*>::const_iterator it =
-                         m_registeredDestinations.find(in);
-                 it != m_registeredDestinations.end() && it.key() == in; ++it) {
+            for (auto it = m_registeredDestinations.find(in);
+                    it != m_registeredDestinations.end() && it.key() == in;
+                    ++it) {
                 it.value()->onInputConfigured(in);
+                m_pMaster->onInputConnected(in);
             }
         }
         QList<AudioOutput> outputs =
@@ -389,8 +408,11 @@ Result SoundManager::setupDevices() {
 
         // Statically connect the Network Device to the Sidechain
         if (device->getInternalName() == kNetworkDeviceInternalName) {
-            AudioOutput out(AudioPath::SIDECHAIN, 0, 2, 0);
+            AudioOutput out(AudioPath::RECORD_BROADCAST, 0, 2, 0);
             outputs.append(out);
+            if (m_config.getForceNetworkClock()) {
+                pNewMasterClockRef = device;
+            }
         }
 
         foreach (AudioOutput out, outputs) {
@@ -407,21 +429,24 @@ Result SoundManager::setupDevices() {
             }
 
             AudioOutputBuffer aob(out, pBuffer);
-            err = device->addOutput(aob) != SOUNDDEVICE_ERROR_OK ? ERR : OK;
-            if (err != OK) goto closeAndError;
-            if (out.getType() == AudioOutput::MASTER) {
-                pNewMasterClockRef = device;
-            } else if ((out.getType() == AudioOutput::DECK ||
-                        out.getType() == AudioOutput::BUS)
-                    && !pNewMasterClockRef) {
-                pNewMasterClockRef = device;
+            err = device->addOutput(aob);
+            if (err != SOUNDDEVICE_ERROR_OK) goto closeAndError;
+
+            if (!m_config.getForceNetworkClock()) {
+                if (out.getType() == AudioOutput::MASTER) {
+                    pNewMasterClockRef = device;
+                } else if ((out.getType() == AudioOutput::DECK ||
+                            out.getType() == AudioOutput::BUS)
+                        && !pNewMasterClockRef) {
+                    pNewMasterClockRef = device;
+                }
             }
 
             // Check if any AudioSource is registered for this AudioOutput and
             // call the onOutputConnected method.
-            for (QHash<AudioOutput, AudioSource*>::const_iterator it =
-                         m_registeredSources.find(out);
-                 it != m_registeredSources.end() && it.key() == out; ++it) {
+            for (auto it = m_registeredSources.find(out);
+                    it != m_registeredSources.end() && it.key() == out;
+                    ++it) {
                 it.value()->onOutputConnected(out);
             }
         }
@@ -434,13 +459,12 @@ Result SoundManager::setupDevices() {
     }
 
     for (const auto& mode: toOpen) {
-        ++devicesAttempted;
         SoundDevice* device = mode.device;
         m_pErrorDevice = device;
+
         // If we have not yet set a clock source then we use the first
         // output device
-        if (device->getInternalName() != kNetworkDeviceInternalName &&
-                pNewMasterClockRef == NULL &&
+        if (pNewMasterClockRef == NULL &&
                 (!haveOutput || mode.isOutput)) {
             pNewMasterClockRef = device;
             qWarning() << "Output sound device clock reference not set! Using"
@@ -454,16 +478,13 @@ Result SoundManager::setupDevices() {
             syncBuffers = 2;
         }
         err = device->open(pNewMasterClockRef == device, syncBuffers);
-        if (err != OK) {
-            goto closeAndError;
-        } else {
-            ++devicesOpened;
-            if (mode.isOutput) {
-                ++outputDevicesOpened;
-            }
-            if (mode.isInput) {
-                ++inputDevicesOpened;
-            }
+        if (err != SOUNDDEVICE_ERROR_OK) goto closeAndError;
+        devicesNotFound.remove(device->getInternalName());
+        if (mode.isOutput) {
+            ++outputDevicesOpened;
+        }
+        if (mode.isInput) {
+            ++inputDevicesOpened;
         }
     }
 
@@ -476,18 +497,23 @@ Result SoundManager::setupDevices() {
 
     qDebug() << outputDevicesOpened << "output sound devices opened";
     qDebug() << inputDevicesOpened << "input  sound devices opened";
+    for (const auto& deviceName: devicesNotFound) {
+        qWarning() << deviceName << "not found";
+    }
 
     m_pControlObjectSoundStatusCO->set(
             outputDevicesOpened > 0 ?
                     SOUNDMANAGER_CONNECTED : SOUNDMANAGER_DISCONNECTED);
 
     // returns OK if we were able to open all the devices the user wanted
-    if (devicesAttempted == devicesOpened) {
+    if (devicesNotFound.isEmpty()) {
         emit(devicesSetup());
-        return OK;
+        return SOUNDDEVICE_ERROR_OK;
     }
-    m_pErrorDevice = NULL;
-    return ERR;
+    m_soundDeviceNotFound.reset(
+            new SoundDeviceNotFound(*devicesNotFound.constBegin()));
+    m_pErrorDevice = m_soundDeviceNotFound.get();
+    return SOUNDDEVICE_ERROR_DEVICE_COUNT;
 
 closeAndError:
     const bool sleepAfterClosing = false;
@@ -499,12 +525,40 @@ SoundDevice* SoundManager::getErrorDevice() const {
     return m_pErrorDevice;
 }
 
+QString SoundManager::getErrorDeviceName() const {
+    SoundDevice* device = getErrorDevice();
+    if (device != NULL) {
+        return device->getDisplayName();
+    }
+    return tr("a device");
+}
+
+QString SoundManager::getLastErrorMessage(SoundDeviceError err) const {
+    QString error;
+    QString deviceName(tr("a device"));
+    QString detailedError(tr("An unknown error occurred"));
+    SoundDevice* device = getErrorDevice();
+    if (device != NULL) {
+        deviceName = device->getDisplayName();
+        detailedError = device->getError();
+    }
+    switch (err) {
+    case SOUNDDEVICE_ERROR_DUPLICATE_OUTPUT_CHANNEL:
+        error = tr("Two outputs cannot share channels on \"%1\"").arg(deviceName);
+        break;
+    default:
+        error = tr("Error opening \"%1\"").arg(deviceName) + "\n" + detailedError;
+        break;
+    }
+    return error;
+}
+
 SoundManagerConfig SoundManager::getConfig() const {
     return m_config;
 }
 
-Result SoundManager::setConfig(SoundManagerConfig config) {
-    Result err = OK;
+SoundDeviceError SoundManager::setConfig(SoundManagerConfig config) {
+    SoundDeviceError err = SOUNDDEVICE_ERROR_OK;
     m_config = config;
     checkConfig();
 
@@ -520,7 +574,7 @@ Result SoundManager::setConfig(SoundManagerConfig config) {
     m_pConfig->set(ConfigKey("[Soundcard]","Samplerate"), ConfigValue(m_config.getSampleRate()));
 
     err = setupDevices();
-    if (err == OK) {
+    if (err == SOUNDDEVICE_ERROR_OK) {
         m_config.writeToDisk();
     }
     return err;
@@ -542,14 +596,14 @@ void SoundManager::checkConfig() {
     // latency checks itself for validity on SMConfig::setLatency()
 }
 
-void SoundManager::onDeviceOutputCallback(const unsigned int iFramesPerBuffer) {
+void SoundManager::onDeviceOutputCallback(const SINT iFramesPerBuffer) {
     // Produce a block of samples for output. EngineMaster expects stereo
     // samples so multiply iFramesPerBuffer by 2.
-    m_pMaster->process(iFramesPerBuffer*2);
+    m_pMaster->process(iFramesPerBuffer * 2);
 }
 
 void SoundManager::pushInputBuffers(const QList<AudioInputBuffer>& inputs,
-                                    const unsigned int iFramesPerBuffer) {
+                                    const SINT iFramesPerBuffer) {
    for (QList<AudioInputBuffer>::ConstIterator i = inputs.begin(),
                  e = inputs.end(); i != e; ++i) {
         const AudioInputBuffer& in = *i;
@@ -581,7 +635,6 @@ void SoundManager::readProcess() {
         }
     }
 }
-
 
 void SoundManager::registerOutput(AudioOutput output, AudioSource *src) {
     if (m_registeredSources.contains(output)) {
@@ -644,4 +697,24 @@ void SoundManager::setConfiguredDeckCount(int count) {
 
 int SoundManager::getConfiguredDeckCount() const {
     return m_config.getDeckCount();
+}
+
+void SoundManager::processUnderflowHappened() {
+    if (m_underflowUpdateCount == 0) {
+        if (m_underflowHappened) {
+            m_pMasterAudioLatencyOverload->set(1.0);
+            m_pMasterAudioLatencyOverloadCount->set(
+                    m_pMasterAudioLatencyOverloadCount->get() + 1);
+            m_underflowUpdateCount = CPU_OVERLOAD_DURATION * m_config.getSampleRate()
+                    / m_config.getFramesPerBuffer() / 1000;
+
+            m_underflowHappened = 0; // reseting her is not thread save,
+                                     // but that is OK, because we count only
+                                     // 1 underflow each 500 ms
+        } else {
+            m_pMasterAudioLatencyOverload->set(0.0);
+        }
+    } else {
+        --m_underflowUpdateCount;
+    }
 }

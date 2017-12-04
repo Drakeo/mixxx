@@ -37,10 +37,6 @@ void DlgTrackInfo::init() {
     cueTable->hideColumn(0);
     coverBox->insertWidget(1, m_pWCoverArtLabel);
 
-    // It is essential to make the QPlainTextEdit transparent.
-    // Without this, the background is always solid (white by default).
-    txtLocation->viewport()->setAutoFillBackground(false);
-
     connect(btnNext, SIGNAL(clicked()),
             this, SLOT(slotNext()));
     connect(btnPrev, SIGNAL(clicked()),
@@ -52,9 +48,6 @@ void DlgTrackInfo::init() {
     connect(btnCancel, SIGNAL(clicked()),
             this, SLOT(cancel()));
 
-    connect(btnFetchTag, SIGNAL(clicked()),
-            this, SLOT(fetchTag()));
-
     connect(bpmDouble, SIGNAL(clicked()),
             this, SLOT(slotBpmDouble()));
     connect(bpmHalve, SIGNAL(clicked()),
@@ -63,6 +56,10 @@ void DlgTrackInfo::init() {
             this, SLOT(slotBpmTwoThirds()));
     connect(bpmThreeFourth, SIGNAL(clicked()),
             this, SLOT(slotBpmThreeFourth()));
+    connect(bpmFourThirds, SIGNAL(clicked()),
+            this, SLOT(slotBpmFourThirds()));
+    connect(bpmThreeHalves, SIGNAL(clicked()),
+            this, SLOT(slotBpmThreeHalves()));
     connect(bpmClear, SIGNAL(clicked()),
             this, SLOT(slotBpmClear()));
 
@@ -83,8 +80,11 @@ void DlgTrackInfo::init() {
             m_pTapFilter.data(), SLOT(tap()));
     connect(m_pTapFilter.data(), SIGNAL(tapped(double, int)),
             this, SLOT(slotBpmTap(double, int)));
-    connect(btnReloadFromFile, SIGNAL(clicked()),
-            this, SLOT(reloadTrackMetadata()));
+
+    connect(btnImportMetadataFromFile, SIGNAL(clicked()),
+            this, SLOT(slotImportMetadataFromFile()));
+    connect(btnImportMetadataFromMusicBrainz, SIGNAL(clicked()),
+            this, SLOT(slotImportMetadataFromMusicBrainz()));
     connect(btnOpenFileBrowser, SIGNAL(clicked()),
             this, SLOT(slotOpenInFileBrowser()));
 
@@ -93,8 +93,8 @@ void DlgTrackInfo::init() {
         connect(pCache, SIGNAL(coverFound(const QObject*, const CoverInfo&, QPixmap, bool)),
                 this, SLOT(slotCoverFound(const QObject*, const CoverInfo&, QPixmap, bool)));
     }
-    connect(m_pWCoverArtLabel, SIGNAL(coverArtSelected(const CoverArt&)),
-            this, SLOT(slotCoverArtSelected(const CoverArt&)));
+    connect(m_pWCoverArtLabel, SIGNAL(coverInfoSelected(const CoverInfo&)),
+            this, SLOT(slotCoverInfoSelected(const CoverInfo&)));
     connect(m_pWCoverArtLabel, SIGNAL(reloadCoverArt()),
             this, SLOT(slotReloadCoverArt()));
 }
@@ -166,9 +166,9 @@ void DlgTrackInfo::populateFields(const Track& track) {
 
     // Non-editable fields
     txtDuration->setText(track.getDurationText(mixxx::Duration::Precision::SECONDS));
-    txtLocation->setPlainText(track.getLocation());
+    txtLocation->setText(QDir::toNativeSeparators(track.getLocation()));
     txtType->setText(track.getType());
-    txtBitrate->setText(QString(track.getBitrateText()) + (" ") + tr("kbps"));
+    txtBitrate->setText(QString(track.getBitrateText()) + (" ") + tr(mixxx::AudioSource::Bitrate::unit()));
     txtBpm->setText(track.getBpmText());
     m_keysClone = track.getKeys();
     txtKey->setText(KeyUtils::getGlobalKeyText(m_keysClone));
@@ -178,8 +178,7 @@ void DlgTrackInfo::populateFields(const Track& track) {
     reloadTrackBeats(track);
 
     m_loadedCoverInfo = track.getCoverInfo();
-    m_loadedCoverInfo.trackLocation = track.getLocation();
-    m_pWCoverArtLabel->setCoverArt(m_loadedCoverInfo.trackLocation, m_loadedCoverInfo, QPixmap());
+    m_pWCoverArtLabel->setCoverArt(m_loadedCoverInfo, QPixmap());
     CoverArtCache* pCache = CoverArtCache::instance();
     if (pCache != NULL) {
         pCache->requestCover(m_loadedCoverInfo, this, 0, false, true);
@@ -211,7 +210,7 @@ void DlgTrackInfo::reloadTrackBeats(const Track& track) {
 void DlgTrackInfo::loadTrack(TrackPointer pTrack) {
     clear();
 
-    if (pTrack.isNull()) {
+    if (!pTrack) {
         return;
     }
 
@@ -219,10 +218,11 @@ void DlgTrackInfo::loadTrack(TrackPointer pTrack) {
 
     populateFields(*m_pLoadedTrack);
     populateCues(m_pLoadedTrack);
+    m_pWCoverArtLabel->loadTrack(m_pLoadedTrack);
 
     // We already listen to changed() so we don't need to listen to individual
     // signals such as cuesUpdates, coverArtUpdated(), etc.
-    connect(pTrack.data(), SIGNAL(changed(Track*)),
+    connect(pTrack.get(), SIGNAL(changed(Track*)),
             this, SLOT(updateTrackMetadata()));
 }
 
@@ -234,27 +234,21 @@ void DlgTrackInfo::slotCoverFound(const QObject* pRequestor,
             m_loadedCoverInfo.hash == info.hash) {
         qDebug() << "DlgTrackInfo::slotPixmapFound" << pRequestor << info
                  << pixmap.size();
-        m_pWCoverArtLabel->setCoverArt(m_pLoadedTrack->getLocation(), m_loadedCoverInfo, pixmap);
+        m_pWCoverArtLabel->setCoverArt(m_loadedCoverInfo, pixmap);
     }
 }
 
 void DlgTrackInfo::slotReloadCoverArt() {
     if (m_pLoadedTrack) {
-        // TODO(rryan) move this out of the main thread. The issue is that
-        // CoverArtCache::requestGuessCover mutates the provided track whereas
-        // in DlgTrackInfo we delay changing the track until the user hits apply
-        // (or cancels the edit).
-        CoverArt art = CoverArtUtils::guessCoverArt(m_pLoadedTrack);
-        slotCoverArtSelected(art);
+        CoverInfo coverInfo =
+                CoverArtUtils::guessCoverInfo(*m_pLoadedTrack);
+        slotCoverInfoSelected(coverInfo);
     }
 }
 
-void DlgTrackInfo::slotCoverArtSelected(const CoverArt& art) {
-    qDebug() << "DlgTrackInfo::slotCoverArtSelected" << art;
-    m_loadedCoverInfo = art.info;
-    if (m_pLoadedTrack) {
-        m_loadedCoverInfo.trackLocation = m_pLoadedTrack->getLocation();
-    }
+void DlgTrackInfo::slotCoverInfoSelected(const CoverInfo& coverInfo) {
+    qDebug() << "DlgTrackInfo::slotCoverInfoSelected" << coverInfo;
+    m_loadedCoverInfo = coverInfo;
     CoverArtCache* pCache = CoverArtCache::instance();
     if (pCache != NULL) {
         pCache->requestCover(m_loadedCoverInfo, this, 0, false, true);
@@ -262,7 +256,7 @@ void DlgTrackInfo::slotCoverArtSelected(const CoverArt& art) {
 }
 
 void DlgTrackInfo::slotOpenInFileBrowser() {
-    if (m_pLoadedTrack.isNull()) {
+    if (!m_pLoadedTrack) {
         return;
     }
 
@@ -354,7 +348,7 @@ void DlgTrackInfo::saveTrack() {
 
     // First, disconnect the track changed signal. Otherwise we signal ourselves
     // and repopulate all these fields.
-    disconnect(m_pLoadedTrack.data(), SIGNAL(changed(Track*)),
+    disconnect(m_pLoadedTrack.get(), SIGNAL(changed(Track*)),
                this, SLOT(updateTrackMetadata()));
 
     m_pLoadedTrack->setTitle(txtTrackName->text());
@@ -403,7 +397,7 @@ void DlgTrackInfo::saveTrack() {
             int iTableHotcue = vHotcue.toInt();
             // The GUI shows hotcues as 1-indexed, but they are actually
             // 0-indexed, so subtract 1
-            pCue->setHotCue(iTableHotcue-1);
+            pCue->setHotCue(iTableHotcue - 1);
         } else {
             pCue->setHotCue(-1);
         }
@@ -432,7 +426,7 @@ void DlgTrackInfo::saveTrack() {
     m_pLoadedTrack->setCoverInfo(m_loadedCoverInfo);
 
     // Reconnect changed signals now.
-    connect(m_pLoadedTrack.data(), SIGNAL(changed(Track*)),
+    connect(m_pLoadedTrack.get(), SIGNAL(changed(Track*)),
             this, SLOT(updateTrackMetadata()));
 }
 
@@ -450,7 +444,7 @@ void DlgTrackInfo::unloadTrack(bool save) {
 void DlgTrackInfo::clear() {
 
     disconnect(this, SLOT(updateTrackMetadata()));
-    m_pLoadedTrack.clear();
+    m_pLoadedTrack.reset();
 
     txtTrackName->setText("");
     txtArtist->setText("");
@@ -468,7 +462,7 @@ void DlgTrackInfo::clear() {
 
     txtDuration->setText("");
     txtType->setText("");
-    txtLocation->setPlainText("");
+    txtLocation->setText("");
     txtBitrate->setText("");
     txtBpm->setText("");
     txtKey->setText("");
@@ -479,7 +473,7 @@ void DlgTrackInfo::clear() {
     cueTable->setRowCount(0);
 
     m_loadedCoverInfo = CoverInfo();
-    m_pWCoverArtLabel->setCoverArt(QString(), m_loadedCoverInfo, QPixmap());
+    m_pWCoverArtLabel->setCoverArt(m_loadedCoverInfo, QPixmap());
 }
 
 void DlgTrackInfo::slotBpmDouble() {
@@ -510,6 +504,20 @@ void DlgTrackInfo::slotBpmThreeFourth() {
     spinBpm->setValue(newValue);
 }
 
+void DlgTrackInfo::slotBpmFourThirds() {
+    m_pBeatsClone->scale(Beats::FOURTHIRDS);
+    // read back the actual value
+    double newValue = m_pBeatsClone->getBpm();
+    spinBpm->setValue(newValue);
+}
+
+void DlgTrackInfo::slotBpmThreeHalves() {
+    m_pBeatsClone->scale(Beats::THREEHALVES);
+    // read back the actual value
+    double newValue = m_pBeatsClone->getBpm();
+    spinBpm->setValue(newValue);
+}
+
 void DlgTrackInfo::slotBpmClear() {
     spinBpm->setValue(0);
     m_pBeatsClone.clear();
@@ -531,8 +539,8 @@ void DlgTrackInfo::slotBpmConstChanged(int state) {
             // The cue point should be set on a beat, so this seams
             // to be a good alternative
             double cue = m_pLoadedTrack->getCuePoint();
-            m_pBeatsClone = BeatFactory::makeBeatGrid(m_pLoadedTrack.data(),
-                    spinBpm->value(), cue);
+            m_pBeatsClone = BeatFactory::makeBeatGrid(
+                    *m_pLoadedTrack, spinBpm->value(), cue);
         } else {
             m_pBeatsClone.clear();
         }
@@ -565,8 +573,8 @@ void DlgTrackInfo::slotSpinBpmValueChanged(double value) {
 
     if (!m_pBeatsClone) {
         double cue = m_pLoadedTrack->getCuePoint();
-        m_pBeatsClone = BeatFactory::makeBeatGrid(m_pLoadedTrack.data(),
-                value, cue);
+        m_pBeatsClone = BeatFactory::makeBeatGrid(
+                *m_pLoadedTrack, value, cue);
     }
 
     double oldValue = m_pBeatsClone->getBpm();
@@ -605,28 +613,28 @@ void DlgTrackInfo::slotKeyTextChanged() {
     m_keysClone = newKeys;
 }
 
-void DlgTrackInfo::reloadTrackMetadata() {
+void DlgTrackInfo::slotImportMetadataFromFile() {
     if (m_pLoadedTrack) {
         // Allocate a temporary track object for reading the metadata.
         // We cannot reuse m_pLoadedTrack, because it might already been
         // modified and we want to read fresh metadata directly from the
         // file. Otherwise the changes in m_pLoadedTrack would be lost.
-        TrackPointer pTrack(Track::newTemporary(
+        TrackPointer pTrack = Track::newTemporary(
                 m_pLoadedTrack->getFileInfo(),
-                m_pLoadedTrack->getSecurityToken()));
-        SoundSourceProxy(pTrack).loadTrackMetadata();
-        if (!pTrack.isNull()) {
+                m_pLoadedTrack->getSecurityToken());
+        if (pTrack) {
+            SoundSourceProxy(pTrack).updateTrackFromSource();
             populateFields(*pTrack);
         }
     }
 }
 
 void DlgTrackInfo::updateTrackMetadata() {
-    if (!m_pLoadedTrack.isNull()) {
+    if (m_pLoadedTrack) {
         populateFields(*m_pLoadedTrack);
     }
 }
 
-void DlgTrackInfo::fetchTag() {
+void DlgTrackInfo::slotImportMetadataFromMusicBrainz() {
     emit(showTagFetcher(m_pLoadedTrack));
 }

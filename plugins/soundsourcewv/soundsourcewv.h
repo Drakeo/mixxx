@@ -16,13 +16,14 @@ class SoundSourceWV: public SoundSourcePlugin {
 
     void close() override;
 
-    SINT seekSampleFrame(SINT frameIndex) override;
-
-    SINT readSampleFrames(SINT numberOfFrames,
-            CSAMPLE* sampleBuffer) override;
+  protected:
+    ReadableSampleFrames readSampleFramesClamped(
+            WritableSampleFrames sampleFrames) override;
 
   private:
-    OpenResult tryOpen(const AudioSourceConfig& audioSrcCfg) override;
+    OpenResult tryOpen(
+            OpenMode mode,
+            const OpenParams& params) override;
 
     static int32_t ReadBytesCallback(void* id, void* data, int bcount);
     static uint32_t GetPosCallback(void* id);
@@ -38,6 +39,8 @@ class SoundSourceWV: public SoundSourcePlugin {
     CSAMPLE m_sampleScaleFactor;
     QFile* m_pWVFile;
     QFile* m_pWVCFile;
+
+    SINT m_curFrameIndex;
 };
 
 class SoundSourceProviderWV: public SoundSourceProvider {

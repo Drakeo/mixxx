@@ -17,24 +17,30 @@
 #ifndef SOUNDMANAGER_H
 #define SOUNDMANAGER_H
 
+#include <memory>
+
 #include <QObject>
 #include <QString>
 #include <QList>
 #include <QHash>
+#include <QSharedPointer>
 
 #include "preferences/usersettings.h"
 #include "engine/sidechain/enginenetworkstream.h"
 #include "soundio/soundmanagerconfig.h"
-#include "util/result.h"
+#include "soundio/sounddevice.h"
+#include "soundio/sounddeviceerror.h"
 #include "util/types.h"
+#include "util/cmdlineargs.h"
 
-class SoundDevice;
 class EngineMaster;
 class AudioOutput;
 class AudioInput;
 class AudioSource;
 class AudioDestination;
 class ControlObject;
+class ControlProxy;
+class SoundDeviceNotFound;
 
 #define MIXXX_PORTAUDIO_JACK_STRING "JACK Audio Connection Kit"
 #define MIXXX_PORTAUDIO_ALSA_STRING "ALSA"
@@ -66,13 +72,15 @@ class SoundManager : public QObject {
 
     // Opens all the devices chosen by the user in the preferences dialog, and
     // establishes the proper connections between them and the mixing engine.
-    Result setupDevices();
+    SoundDeviceError setupDevices();
 
     // Playermanager will notify us when the number of decks changes.
     void setConfiguredDeckCount(int count);
     int getConfiguredDeckCount() const;
 
     SoundDevice* getErrorDevice() const;
+    QString getErrorDeviceName() const;
+    QString getLastErrorMessage(SoundDeviceError err) const;
 
     // Returns a list of samplerates we will attempt to support for a given API.
     QList<unsigned int> getSampleRates(QString api) const;
@@ -83,15 +91,15 @@ class SoundManager : public QObject {
     // Get a list of host APIs supported by PortAudio.
     QList<QString> getHostAPIList() const;
     SoundManagerConfig getConfig() const;
-    Result setConfig(SoundManagerConfig config);
+    SoundDeviceError setConfig(SoundManagerConfig config);
     void checkConfig();
 
-    void onDeviceOutputCallback(const unsigned int iFramesPerBuffer);
+    void onDeviceOutputCallback(const SINT iFramesPerBuffer);
 
     // Used by SoundDevices to "push" any audio from their inputs that they have
     // into the mixing engine.
     void pushInputBuffers(const QList<AudioInputBuffer>& inputs,
-                          const unsigned int iFramesPerBuffer);
+                          const SINT iFramesPerBuffer);
 
 
     void writeProcess();
@@ -105,6 +113,17 @@ class SoundManager : public QObject {
     QSharedPointer<EngineNetworkStream> getNetworkStream() const {
         return m_pNetworkStream;
     }
+
+    void underflowHappened(int code) {
+        m_underflowHappened = 1;
+        // Disable the engine warnings by default, because printing a warning is a
+        // locking function that will make the problem worse
+        if (CmdlineArgs::Instance().getDeveloper()) {
+            qWarning() << "underflowHappened code:" << code;
+        }
+    }
+
+    void processUnderflowHappened();
 
   signals:
     void devicesUpdated(); // emitted when pointers to SoundDevices go stale
@@ -142,6 +161,13 @@ class SoundManager : public QObject {
     ControlObject* m_pControlObjectVinylControlGainCO;
 
     QSharedPointer<EngineNetworkStream> m_pNetworkStream;
+
+    QAtomicInt m_underflowHappened;
+    int m_underflowUpdateCount;
+    ControlProxy* m_pMasterAudioLatencyOverloadCount;
+    ControlProxy* m_pMasterAudioLatencyOverload;
+
+    std::unique_ptr<SoundDeviceNotFound> m_soundDeviceNotFound;
 };
 
 #endif

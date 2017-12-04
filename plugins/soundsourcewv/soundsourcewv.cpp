@@ -1,8 +1,16 @@
-#include "soundsourcewv.h"
-
 #include <QFile>
 
+#include "soundsourcewv.h"
+
+#include "util/logger.h"
+
 namespace mixxx {
+
+namespace {
+
+const Logger kLogger("SoundSourceWV");
+
+} // anonymous namespace
 
 //static
 WavpackStreamReader SoundSourceWV::s_streamReader = {
@@ -21,19 +29,22 @@ SoundSourceWV::SoundSourceWV(const QUrl& url)
           m_wpc(nullptr),
           m_sampleScaleFactor(CSAMPLE_ZERO), 
           m_pWVFile(nullptr),
-          m_pWVCFile(nullptr) {
+          m_pWVCFile(nullptr),
+          m_curFrameIndex(0) {
 }
 
 SoundSourceWV::~SoundSourceWV() {
     close();
 }
 
-SoundSource::OpenResult SoundSourceWV::tryOpen(const AudioSourceConfig& audioSrcCfg) {
+SoundSource::OpenResult SoundSourceWV::tryOpen(
+        OpenMode /*mode*/,
+        const OpenParams& params) {
     DEBUG_ASSERT(!m_wpc);
     char msg[80]; // hold possible error message
     int openFlags = OPEN_WVC | OPEN_NORMALIZE;
-    if ((kChannelCountMono == audioSrcCfg.getChannelCount()) ||
-            (kChannelCountStereo == audioSrcCfg.getChannelCount())) {
+    if ((params.channelCount() == 1) ||
+            (params.channelCount() == 2)) {
         openFlags |= OPEN_2CH_MAX;
     }
 
@@ -51,13 +62,16 @@ SoundSource::OpenResult SoundSourceWV::tryOpen(const AudioSourceConfig& audioSrc
     m_wpc = WavpackOpenFileInputEx(&s_streamReader, m_pWVFile, m_pWVCFile,
             msg, openFlags, 0);
     if (!m_wpc) {
-        qDebug() << "SSWV::open: failed to open file : " << msg;
-        return OpenResult::FAILED;
+        kLogger.debug() << "failed to open file : " << msg;
+        return OpenResult::Failed;
     }
 
     setChannelCount(WavpackGetReducedChannels(m_wpc));
-    setSamplingRate(WavpackGetSampleRate(m_wpc));
-    setFrameCount(WavpackGetNumSamples(m_wpc));
+    setSampleRate(WavpackGetSampleRate(m_wpc));
+    initFrameIndexRangeOnce(
+            mixxx::IndexRange::forward(
+                    0,
+                    WavpackGetNumSamples(m_wpc)));
 
     if (WavpackGetMode(m_wpc) & MODE_FLOAT) {
         m_sampleScaleFactor = CSAMPLE_PEAK;
@@ -68,7 +82,9 @@ SoundSource::OpenResult SoundSourceWV::tryOpen(const AudioSourceConfig& audioSrc
         m_sampleScaleFactor = CSAMPLE_PEAK / wavpackPeakSampleValue;
     }
 
-    return OpenResult::SUCCEEDED;
+    m_curFrameIndex = frameIndexMin();
+
+    return OpenResult::Succeeded;
 }
 
 void SoundSourceWV::close() {
@@ -88,31 +104,49 @@ void SoundSourceWV::close() {
     }
 }
 
-SINT SoundSourceWV::seekSampleFrame(SINT frameIndex) {
-    DEBUG_ASSERT(isValidFrameIndex(frameIndex));
-    if (WavpackSeekSample(m_wpc, frameIndex) == true) {
-        return frameIndex;
-    } else {
-        qDebug() << "SSWV::seek : could not seek to frame #" << frameIndex;
-        return WavpackGetSampleIndex(m_wpc);
-    }
-}
+ReadableSampleFrames SoundSourceWV::readSampleFramesClamped(
+        WritableSampleFrames writableSampleFrames) {
 
-SINT SoundSourceWV::readSampleFrames(
-        SINT numberOfFrames, CSAMPLE* sampleBuffer) {
-    // static assert: sizeof(CSAMPLE) == sizeof(int32_t)
+    const SINT firstFrameIndex = writableSampleFrames.frameIndexRange().start();
+
+    if (m_curFrameIndex != firstFrameIndex) {
+        if (WavpackSeekSample(m_wpc, firstFrameIndex)) {
+            m_curFrameIndex = firstFrameIndex;
+        } else {
+            kLogger.warning()
+                    << "Could not seek to first frame index"
+                    << firstFrameIndex;
+            m_curFrameIndex = WavpackGetSampleIndex(m_wpc);
+            return ReadableSampleFrames(IndexRange::between(m_curFrameIndex, m_curFrameIndex));
+        }
+    }
+    DEBUG_ASSERT(m_curFrameIndex == firstFrameIndex);
+
+    const SINT numberOfFramesTotal = writableSampleFrames.frameLength();
+
+    static_assert(sizeof(CSAMPLE) == sizeof(int32_t),
+            "CSAMPLE and int32_t must have the same size");
+    CSAMPLE* pOutputBuffer = writableSampleFrames.writableData();
     SINT unpackCount = WavpackUnpackSamples(m_wpc,
-            reinterpret_cast<int32_t*>(sampleBuffer), numberOfFrames);
+            reinterpret_cast<int32_t*>(pOutputBuffer), numberOfFramesTotal);
+    DEBUG_ASSERT(unpackCount >= 0);
+    DEBUG_ASSERT(unpackCount <= numberOfFramesTotal);
     if (!(WavpackGetMode(m_wpc) & MODE_FLOAT)) {
         // signed integer -> float
         const SINT sampleCount = frames2samples(unpackCount);
         for (SINT i = 0; i < sampleCount; ++i) {
             const int32_t sampleValue =
-                    reinterpret_cast<int32_t*>(sampleBuffer)[i];
-            sampleBuffer[i] = CSAMPLE(sampleValue) * m_sampleScaleFactor;
+                    *reinterpret_cast<int32_t*>(pOutputBuffer);
+            *pOutputBuffer++ = CSAMPLE(sampleValue) * m_sampleScaleFactor;
         }
     }
-    return unpackCount;
+    const auto resultRange = IndexRange::forward(m_curFrameIndex, unpackCount);
+    m_curFrameIndex += unpackCount;
+    return ReadableSampleFrames(
+            resultRange,
+            SampleBuffer::ReadableSlice(
+                    writableSampleFrames.writableData(),
+                    frames2samples(unpackCount)));
 }
 
 QString SoundSourceProviderWV::getName() const {
@@ -126,7 +160,7 @@ QStringList SoundSourceProviderWV::getSupportedFileExtensions() const {
 }
 
 SoundSourcePointer SoundSourceProviderWV::newSoundSource(const QUrl& url) {
-    return exportSoundSourcePlugin(new SoundSourceWV(url));
+    return newSoundSourcePluginFromUrl<SoundSourceWV>(url);
 }
 
 //static

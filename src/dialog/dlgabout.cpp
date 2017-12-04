@@ -40,7 +40,9 @@ DlgAbout::DlgAbout(QWidget* parent) : QDialog(parent), Ui::DlgAboutDlg() {
             << "Ilkka Tuohela"
             << "Max Linke"
             << "Marcos Cardinot"
-            << "Nicu Badescu";
+            << "Nicu Badescu"
+            << "Uwe Klotz"
+            << "Be";
 
     QStringList thisReleaseContributors;
     thisReleaseContributors
@@ -61,7 +63,6 @@ DlgAbout::DlgAbout(QWidget* parent) : QDialog(parent), Ui::DlgAboutDlg() {
             << "Florian Kiekh&auml;fer"
             << "Michael Sawyer"
             << "Tuukka Pasanen"
-            << "Uwe Klotz"
             << "Quentin Faidide"
             << "Peter G. Marczis"
             << "Khyrul Bashar"
@@ -94,14 +95,13 @@ DlgAbout::DlgAbout(QWidget* parent) : QDialog(parent), Ui::DlgAboutDlg() {
             << "Vladim&iacute;r Dudr"
             << "Thorsten Munsch"
             << "Emile Vrijdags"
-            << "Be"
             << "Neale Pickett"
             << "St&eacute;phane Guillou"
             << "Russ Mannex"
             << "Brendan Austin"
             << "Lorenz Drescher"
             << "David Guglielmi"
-            << "JAmes Atwill"
+            << "James Atwill"
             << "Chlo&eacute; Avrillon"
             << "Hendrik Reglin"
             << "Pavel Potocek"
@@ -110,7 +110,20 @@ DlgAbout::DlgAbout(QWidget* parent) : QDialog(parent), Ui::DlgAboutDlg() {
             << "Patric Schmitz"
             << "Timothy Rae"
             << "Roland Schwarz"
-            << "Jan Ypma";
+            << "Jan Ypma"
+            << "Leigh Scott"
+            << "William Lemus"
+            << "Andreas M&uuml;ller"
+            << "Josep Maria Antol&iacute;n Segura"
+            << "Sam Cross"
+            << "Joey Pabalinas"
+            << "Nimit Bhardwaj"
+            << "Pavel Sokolov"
+            << "Devananda van der Veen"
+            << "Tatsuyuki Ishi"
+            << "Kilian Feess"
+			<< "Conner Phillips"
+			<< "Daniel Poelzleithner";
 
     QStringList specialThanks;
     specialThanks

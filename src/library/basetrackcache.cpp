@@ -5,9 +5,11 @@
 
 #include <QScopedPointer>
 
+#include "control/controlproxy.h"
 #include "library/trackcollection.h"
 #include "library/searchqueryparser.h"
 #include "library/queryutil.h"
+#include "track/keyutils.h"
 #include "util/performancetimer.h"
 
 namespace {
@@ -30,8 +32,8 @@ BaseTrackCache::BaseTrackCache(TrackCollection* pTrackCollection,
           m_bIndexBuilt(false),
           m_bIsCaching(isCaching),
           m_trackDAO(pTrackCollection->getTrackDAO()),
-          m_database(pTrackCollection->getDatabase()),
-          m_pQueryParser(new SearchQueryParser(pTrackCollection->getDatabase())) {
+          m_database(pTrackCollection->database()),
+          m_pQueryParser(new SearchQueryParser(pTrackCollection)) {
     m_searchColumns << "artist"
                     << "album"
                     << "album_artist"
@@ -41,6 +43,7 @@ BaseTrackCache::BaseTrackCache(TrackCollection* pTrackCollection,
                     << "title"
                     << "genre";
 
+    m_pKeyNotationCP = new ControlProxy("[Library]", "key_notation", this);
     // Convert all the search column names to their field indexes because we use
     // them a bunch.
     m_searchColumnIndices.resize(m_searchColumns.size());
@@ -154,7 +157,7 @@ bool BaseTrackCache::updateIndexWithTrackpointer(TrackPointer pTrack) {
         qDebug() << "updateIndexWithTrackpointer:" << pTrack->getLocation();
     }
 
-    if (pTrack.isNull()) {
+    if (!pTrack) {
         return false;
     }
 
@@ -205,7 +208,15 @@ bool BaseTrackCache::updateIndexWithQuery(const QString& queryString) {
         record.resize(numColumns);
 
         for (int i = 0; i < numColumns; ++i) {
-            record[i] = query.value(i);
+            if (fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_NATIVELOCATION) == i) {
+                // Database stores all locations with Qt separators: "/"
+                // Here we want to cache the display string with native separators.
+                QString location = query.value(i).toString();
+                record[i] = QDir::toNativeSeparators(location);
+            }
+            else {
+                record[i] = query.value(i);
+            }
         }
     }
 
@@ -298,8 +309,8 @@ void BaseTrackCache::getTrackValueForColumn(TrackPointer pTrack,
         trackValue.setValue(pTrack->getType());
     } else if (fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_TRACKNUMBER) == column) {
         trackValue.setValue(pTrack->getTrackNumber());
-    } else if (fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_LOCATION) == column) {
-        trackValue.setValue(pTrack->getLocation());
+    } else if (fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_NATIVELOCATION) == column) {
+        trackValue.setValue(QDir::toNativeSeparators(pTrack->getLocation()));
     } else if (fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_COMMENT) == column) {
         trackValue.setValue(pTrack->getComment());
     } else if (fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_DURATION) == column) {
@@ -328,7 +339,7 @@ void BaseTrackCache::getTrackValueForColumn(TrackPointer pTrack,
                fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_COVERART) == column) {
         // For sorting, we give COLUMN_LIBRARYTABLE_COVERART the same value as
         // the cover hash.
-        trackValue.setValue(pTrack->getCoverInfo().hash);
+        trackValue.setValue(pTrack->getCoverHash());
     } else if (fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_COVERART_SOURCE) == column) {
         trackValue.setValue(static_cast<int>(pTrack->getCoverInfo().source));
     } else if (fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_COVERART_TYPE) == column) {
@@ -349,7 +360,7 @@ QVariant BaseTrackCache::data(TrackId trackId, int column) const {
         getTrackValueForColumn(pTrack, column, result);
     }
 
-    // If the track lookup failed (could happen for track properties we dont
+    // If the track lookup failed (could happen for track properties we don't
     // keep track of in Track, like playlist position) look up the value in
     // the track info cache.
 
@@ -619,6 +630,21 @@ int BaseTrackCache::compareColumnValues(int sortColumn, Qt::SortOrder sortOrder,
             result = 1;
         else
             result = -1;
+    } else if (sortColumn == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_KEY)) {
+        KeyUtils::KeyNotation notation = KeyUtils::keyNotationFromNumericValue(
+            m_pKeyNotationCP->get());
+
+        int key1 = KeyUtils::keyToCircleOfFifthsOrder(
+            KeyUtils::guessKeyFromText(val1.toString()), notation);
+        int key2 = KeyUtils::keyToCircleOfFifthsOrder(
+            KeyUtils::guessKeyFromText(val2.toString()), notation);
+        if (key1 > key2) {
+            result = 1;
+        } else if (key1 < key2) {
+            result = -1;
+        } else if (key1 == key2) {
+            result = 0;
+        }
     } else {
         result = val1.toString().localeAwareCompare(val2.toString());
     }
