@@ -1,16 +1,15 @@
 #include <gtest/gtest.h>
-#include <QStringBuilder>
 #include <QFileInfo>
 
 #include "library/coverartcache.h"
 #include "library/coverartutils.h"
 #include "library/trackcollection.h"
-#include "test/mixxxtest.h"
+#include "test/librarytest.h"
 #include "sources/soundsourceproxy.h"
 
 // first inherit from MixxxTest to construct a QApplication to be able to
 // construct the default QPixmap in CoverArtCache
-class CoverArtCacheTest : public MixxxTest, public CoverArtCache {
+class CoverArtCacheTest : public LibraryTest, public CoverArtCache {
   protected:
     void loadCoverFromMetadata(QString trackLocation) {
         CoverInfo info;
@@ -20,14 +19,15 @@ class CoverArtCacheTest : public MixxxTest, public CoverArtCache {
         info.trackLocation = trackLocation;
 
         CoverArtCache::FutureResult res;
-        res = CoverArtCache::loadCover(info, NULL, 0, false);
+        res = CoverArtCache::loadCover(nullptr, TrackPointer(), info, 0, false);
         EXPECT_QSTRING_EQ(QString(), res.cover.coverLocation);
-        EXPECT_EQ(info.hash, res.cover.hash);
+        EXPECT_TRUE(CoverImageUtils::isValidHash(res.cover.hash));
+        EXPECT_TRUE(res.coverInfoUpdated);
 
-        SecurityTokenPointer securityToken = Sandbox::openSecurityToken(
-            QDir(trackLocation), true);
-        auto pTrack = Track::newTemporary(trackLocation, securityToken);
-        QImage img = SoundSourceProxy(pTrack).importCoverImage();
+        SecurityTokenPointer securityToken =
+                Sandbox::openSecurityToken(QDir(trackLocation), true);
+        QImage img = SoundSourceProxy::importTemporaryCoverImage(
+                trackLocation, securityToken);
         EXPECT_FALSE(img.isNull());
         EXPECT_EQ(img, res.cover.image);
     }
@@ -40,10 +40,10 @@ class CoverArtCacheTest : public MixxxTest, public CoverArtCache {
         info.source = CoverInfo::GUESSED;
         info.coverLocation = coverLocation;
         info.trackLocation = trackLocation;
-        info.hash = 4321; // fake cover hash
+        info.hash = 39287; // actual cover image hash!
 
         CoverArtCache::FutureResult res;
-        res = CoverArtCache::loadCover(info, NULL, 0, false);
+        res = CoverArtCache::loadCover(nullptr, TrackPointer(), info, 0, false);
         EXPECT_QSTRING_EQ(info.coverLocation, res.cover.coverLocation);
         EXPECT_EQ(info.hash, res.cover.hash);
         EXPECT_FALSE(img.isNull());

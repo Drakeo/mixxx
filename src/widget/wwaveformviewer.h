@@ -8,15 +8,19 @@
 #include <QList>
 #include <QMutex>
 
-#include "track/track.h"
-#include "widget/wwidget.h"
 #include "skin/skincontext.h"
+#include "track/track.h"
+#include "util/parented_ptr.h"
+#include "waveform/renderers/waveformmark.h"
+#include "widget/trackdroptarget.h"
+#include "widget/wcuemenupopup.h"
+#include "widget/wwidget.h"
 
 class ControlProxy;
 class WaveformWidgetAbstract;
 class ControlPotmeter;
 
-class WWaveformViewer : public WWidget {
+class WWaveformViewer : public WWidget, public TrackDropTarget {
     Q_OBJECT
   public:
     WWaveformViewer(const char *group, UserSettingsPointer pConfig, QWidget *parent=nullptr);
@@ -31,9 +35,11 @@ class WWaveformViewer : public WWidget {
     void mousePressEvent(QMouseEvent * /*unused*/) override;
     void mouseMoveEvent(QMouseEvent * /*unused*/) override;
     void mouseReleaseEvent(QMouseEvent * /*unused*/) override;
+    void leaveEvent(QEvent* /*unused*/) override;
 
-signals:
-    void trackDropped(QString filename, QString group);
+  signals:
+    void trackDropped(QString filename, QString group) override;
+    void cloneDeck(QString source_group, QString target_group) override;
 
 public slots:
     void slotTrackLoaded(TrackPointer track);
@@ -49,14 +55,15 @@ private slots:
         m_waveformWidget = nullptr;
     }
 
-private:
+  private:
     void setWaveformWidget(WaveformWidgetAbstract* waveformWidget);
     WaveformWidgetAbstract* getWaveformWidget() {
         return m_waveformWidget;
     }
     //direct access to let factory sync/set default zoom
-    void setZoom(int zoom);
-    void setDisplayBeatGrid(bool set);
+    void setZoom(double zoom);
+    void setDisplayBeatGridAlpha(int alpha);
+    void setPlayMarkerPosition(double position);
 
 private:
     const char* m_pGroup;
@@ -66,13 +73,21 @@ private:
     ControlProxy* m_pScratchPositionEnable;
     ControlProxy* m_pScratchPosition;
     ControlProxy* m_pWheel;
+    ControlProxy* m_pPlayEnabled;
     bool m_bScratching;
     bool m_bBending;
     QPoint m_mouseAnchor;
+    parented_ptr<WCueMenuPopup> m_pCueMenuPopup;
+    WaveformMarkPointer m_pHoveredMark;
 
     WaveformWidgetAbstract* m_waveformWidget;
 
     friend class WaveformWidgetFactory;
+
+    CuePointer getCuePointerFromCueMark(WaveformMarkPointer pMark) const;
+    void highlightMark(WaveformMarkPointer pMark);
+    void unhighlightMark(WaveformMarkPointer pMark);
+    bool isPlaying() const;
 };
 
 #endif

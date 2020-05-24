@@ -22,7 +22,7 @@ void WCoverArtMenu::createActions() {
     connect(m_pChange, SIGNAL(triggered()), this, SLOT(slotChange()));
     addAction(m_pChange);
 
-    m_pUnset = new QAction(tr("Unset cover",
+    m_pUnset = new QAction(tr("Clear cover",
             "clears the set cover art -- does not touch files on disk"), this);
     connect(m_pUnset, SIGNAL(triggered()), this, SLOT(slotUnset()));
     addAction(m_pUnset);
@@ -69,7 +69,7 @@ void WCoverArtMenu::slotChange() {
 
     // TODO(rryan): Ask if user wants to copy the file.
 
-    CoverInfo coverInfo;
+    CoverInfoRelative coverInfo;
     // Create a security token for the file.
     QFileInfo selectedCover(selectedCoverPath);
     SecurityTokenPointer pToken = Sandbox::openSecurityToken(
@@ -83,10 +83,9 @@ void WCoverArtMenu::slotChange() {
     coverInfo.source = CoverInfo::USER_SELECTED;
     coverInfo.coverLocation = selectedCoverPath;
     // TODO() here we may introduce a duplicate hash code
-    coverInfo.hash = CoverArtUtils::calculateHash(image);
-    coverInfo.trackLocation = m_coverInfo.trackLocation;
+    coverInfo.hash = CoverImageUtils::calculateHash(image);
     qDebug() << "WCoverArtMenu::slotChange emit" << coverInfo;
-    emit(coverInfoSelected(coverInfo));
+    emit coverInfoSelected(coverInfo);
 }
 
 void WCoverArtMenu::slotUnset() {
@@ -94,5 +93,5 @@ void WCoverArtMenu::slotUnset() {
     coverInfo.type = CoverInfo::NONE;
     coverInfo.source = CoverInfo::USER_SELECTED;
     qDebug() << "WCoverArtMenu::slotUnset emit" << coverInfo;
-    emit(coverInfoSelected(coverInfo));
+    emit coverInfoSelected(coverInfo);
 }

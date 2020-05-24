@@ -1,7 +1,10 @@
-
 #include "library/librarytablemodel.h"
-#include "library/queryutil.h"
+
 #include "library/dao/trackschema.h"
+#include "library/trackcollection.h"
+#include "library/trackcollectionmanager.h"
+#include "library/queryutil.h"
+
 #include "mixer/playermanager.h"
 
 namespace {
@@ -12,9 +15,9 @@ const QString kDefaultLibraryFilter =
 } // anonymous namespace
 
 LibraryTableModel::LibraryTableModel(QObject* parent,
-                                     TrackCollection* pTrackCollection,
+                                     TrackCollectionManager* pTrackCollectionManager,
                                      const char* settingsNamespace)
-        : BaseSqlTableModel(parent, pTrackCollection, settingsNamespace) {
+        : BaseSqlTableModel(parent, pTrackCollectionManager, settingsNamespace) {
     setTableModel();
 }
 
@@ -32,7 +35,7 @@ void LibraryTableModel::setTableModel(int id) {
 
     const QString tableName = "library_view";
 
-    QSqlQuery query(m_pTrackCollection->database());
+    QSqlQuery query(m_database);
     QString queryString = "CREATE TEMPORARY VIEW IF NOT EXISTS " + tableName + " AS "
             "SELECT " + columns.join(", ") +
             " FROM library INNER JOIN track_locations "
@@ -48,7 +51,7 @@ void LibraryTableModel::setTableModel(int id) {
     tableColumns << LIBRARYTABLE_PREVIEW;
     tableColumns << LIBRARYTABLE_COVERART;
     setTable(tableName, LIBRARYTABLE_ID, tableColumns,
-             m_pTrackCollection->getTrackSource());
+             m_pTrackCollectionManager->internalCollection()->getTrackSource());
     setSearch("");
     setDefaultSort(fieldIndex("artist"), Qt::AscendingOrder);
 
@@ -61,38 +64,31 @@ void LibraryTableModel::setTableModel(int id) {
 int LibraryTableModel::addTracks(const QModelIndex& index,
                                  const QList<QString>& locations) {
     Q_UNUSED(index);
-    QList<QFileInfo> fileInfoList;
-    foreach (QString fileLocation, locations) {
-        fileInfoList.append(QFileInfo(fileLocation));
-    }
-    QList<TrackId> trackIds = m_pTrackCollection->getTrackDAO().addMultipleTracks(fileInfoList, true);
+    QList<TrackId> trackIds = m_pTrackCollectionManager->internalCollection()->resolveTrackIdsFromLocations(
+            locations);
     select();
     return trackIds.size();
 }
 
 bool LibraryTableModel::isColumnInternal(int column) {
-    if ((column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_ID)) ||
-            (column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_URL)) ||
-            (column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_CUEPOINT)) ||
-            (column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_WAVESUMMARYHEX)) ||
-            (column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_SAMPLERATE)) ||
-            (column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_MIXXXDELETED)) ||
-            (column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_HEADERPARSED)) ||
-            (column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_PLAYED)) ||
-            (column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_KEY_ID))||
-            (column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_BPM_LOCK)) ||
-            (column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_CHANNELS)) ||
-            (column == fieldIndex(ColumnCache::COLUMN_TRACKLOCATIONSTABLE_FSDELETED)) ||
+    return column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_ID) ||
+            column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_URL) ||
+            column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_CUEPOINT) ||
+            column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_WAVESUMMARYHEX) ||
+            column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_SAMPLERATE) ||
+            column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_MIXXXDELETED) ||
+            column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_HEADERPARSED) ||
+            column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_PLAYED) ||
+            column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_KEY_ID) ||
+            column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_BPM_LOCK) ||
+            column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_CHANNELS) ||
+            column == fieldIndex(ColumnCache::COLUMN_TRACKLOCATIONSTABLE_FSDELETED) ||
             (PlayerManager::numPreviewDecks() == 0 &&
-             column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_PREVIEW)) ||
-            (column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_COVERART_SOURCE)) ||
-            (column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_COVERART_TYPE)) ||
-            (column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_COVERART_LOCATION)) ||
-            (column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_COVERART_HASH))) {
-        return true;
-    }
-
-    return false;
+                    column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_PREVIEW)) ||
+            column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_COVERART_SOURCE) ||
+            column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_COVERART_TYPE) ||
+            column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_COVERART_LOCATION) ||
+            column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_COVERART_HASH);
 }
 
 TrackModel::CapabilitiesFlags LibraryTableModel::getCapabilities() const {
@@ -101,12 +97,10 @@ TrackModel::CapabilitiesFlags LibraryTableModel::getCapabilities() const {
             | TRACKMODELCAPS_ADDTOPLAYLIST
             | TRACKMODELCAPS_ADDTOCRATE
             | TRACKMODELCAPS_ADDTOAUTODJ
-            | TRACKMODELCAPS_IMPORTMETADATA
+            | TRACKMODELCAPS_EDITMETADATA
             | TRACKMODELCAPS_LOADTODECK
             | TRACKMODELCAPS_LOADTOSAMPLER
             | TRACKMODELCAPS_LOADTOPREVIEWDECK
             | TRACKMODELCAPS_HIDE
-            | TRACKMODELCAPS_MANIPULATEBEATS
-            | TRACKMODELCAPS_CLEAR_BEATS
             | TRACKMODELCAPS_RESETPLAYED;
 }

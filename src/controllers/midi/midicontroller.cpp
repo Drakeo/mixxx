@@ -17,8 +17,8 @@
 #include "util/math.h"
 #include "util/screensaver.h"
 
-MidiController::MidiController()
-        : Controller() {
+MidiController::MidiController(UserSettingsPointer pConfig)
+        : Controller(pConfig) {
     setDeviceCategory(tr("MIDI Controller"));
 }
 
@@ -34,7 +34,7 @@ QString MidiController::presetExtension() {
 
 void MidiController::visit(const MidiControllerPreset* preset) {
     m_preset = *preset;
-    emit(presetLoaded(getPreset()));
+    emit presetLoaded(getPreset());
 }
 
 int MidiController::close() {
@@ -54,14 +54,9 @@ bool MidiController::matchPreset(const PresetInfo& preset) {
     return false;
 }
 
-bool MidiController::savePreset(const QString fileName) const {
-    MidiControllerPresetFileHandler handler;
-    return handler.save(m_preset, getName(), fileName);
-}
-
-bool MidiController::applyPreset(QList<QString> scriptPaths, bool initializeScripts) {
+bool MidiController::applyPreset(bool initializeScripts) {
     // Handles the engine
-    bool result = Controller::applyPreset(scriptPaths, initializeScripts);
+    bool result = Controller::applyPreset(initializeScripts);
 
     // Only execute this code if this is an output device
     if (isOutputDevice()) {
@@ -75,11 +70,11 @@ bool MidiController::applyPreset(QList<QString> scriptPaths, bool initializeScri
 }
 
 void MidiController::createOutputHandlers() {
-    if (m_preset.outputMappings.isEmpty()) {
+    if (m_preset.getOutputMappings().isEmpty()) {
         return;
     }
 
-    QHashIterator<ConfigKey, MidiOutputMapping> outIt(m_preset.outputMappings);
+    QHashIterator<ConfigKey, MidiOutputMapping> outIt(m_preset.getOutputMappings());
     QStringList failures;
     while (outIt.hasNext()) {
         outIt.next();
@@ -185,16 +180,19 @@ void MidiController::clearTemporaryInputMappings() {
 void MidiController::commitTemporaryInputMappings() {
     // We want to replace duplicates that exist in m_preset but allow duplicates
     // in m_temporaryInputMappings. To do this, we first remove every key in
-    // m_temporaryInputMappings from m_preset.inputMappings.
-    for (QHash<uint16_t, MidiInputMapping>::const_iterator it =
-                 m_temporaryInputMappings.begin();
-         it != m_temporaryInputMappings.end(); ++it) {
-        m_preset.inputMappings.remove(it.key());
+    // m_temporaryInputMappings from m_preset's input mappings.
+    for (auto it = m_temporaryInputMappings.constBegin();
+         it != m_temporaryInputMappings.constEnd(); ++it) {
+        m_preset.removeInputMapping(it.key());
     }
 
-    // Now, we can just use unite since we manually removed the duplicates in
-    // the original set.
-    m_preset.inputMappings.unite(m_temporaryInputMappings);
+    // Now, we can just use add all mappings from m_temporaryInputMappings
+    // since we removed the duplicates in the original set.
+    for (auto it = m_temporaryInputMappings.constBegin();
+            it != m_temporaryInputMappings.constEnd();
+            ++it) {
+        m_preset.addInputMapping(it.key(), it.value());
+    }
     m_temporaryInputMappings.clear();
 }
 
@@ -203,27 +201,35 @@ void MidiController::receive(unsigned char status, unsigned char control,
     unsigned char channel = MidiUtils::channelFromStatus(status);
     unsigned char opCode = MidiUtils::opCodeFromStatus(status);
 
+    // Ignore MIDI beat clock messages (0xF8) until we have proper MIDI sync in
+    // Mixxx. These messages are not suitable to use in JS anyway, as they are
+    // sent at 24 ppqn (i.e. one message every 20.83 ms for a 120 BPM track)
+    // and require real-time code. Currently, they are only spam on the
+    // console, inhibit the screen saver unintentionally, could potentially
+    // slow down Mixxx or interfere with the learning wizard.
+    if (status == 0xF8) {
+        return;
+    }
+
     controllerDebug(MidiUtils::formatMidiMessage(getName(), status, control, value,
                                                  channel, opCode, timestamp));
     MidiKey mappingKey(status, control);
 
     triggerActivity();
     if (isLearning()) {
-        emit(messageReceived(status, control, value));
+        emit messageReceived(status, control, value);
 
-        QHash<uint16_t, MidiInputMapping>::const_iterator it =
-                m_temporaryInputMappings.find(mappingKey.key);
-        if (it != m_temporaryInputMappings.end()) {
-            for (; it != m_temporaryInputMappings.end() && it.key() == mappingKey.key; ++it) {
+        auto it = m_temporaryInputMappings.constFind(mappingKey.key);
+        if (it != m_temporaryInputMappings.constEnd()) {
+            for (; it != m_temporaryInputMappings.constEnd() && it.key() == mappingKey.key; ++it) {
                 processInputMapping(it.value(), status, control, value, timestamp);
             }
             return;
         }
     }
 
-    QHash<uint16_t, MidiInputMapping>::const_iterator it =
-            m_preset.inputMappings.find(mappingKey.key);
-    for (; it != m_preset.inputMappings.end() && it.key() == mappingKey.key; ++it) {
+    auto it = m_preset.getInputMappings().constFind(mappingKey.key);
+    for (; it != m_preset.getInputMappings().constEnd() && it.key() == mappingKey.key; ++it) {
         processInputMapping(it.value(), status, control, value, timestamp);
     }
 }
@@ -274,8 +280,7 @@ void MidiController::processInputMapping(const MidiInputMapping& mapping,
 
     if (mapping_is_14bit) {
         bool found = false;
-        for (QList<QPair<MidiInputMapping, unsigned char> >::iterator it =
-                     m_fourteen_bit_queued_mappings.begin();
+        for (auto it = m_fourteen_bit_queued_mappings.begin();
              it != m_fourteen_bit_queued_mappings.end(); ++it) {
             if (it->first.control == mapping.control) {
                 if ((it->first.options.fourteen_bit_lsb && mapping.options.fourteen_bit_lsb) ||
@@ -463,21 +468,19 @@ void MidiController::receive(QByteArray data, mixxx::Duration timestamp) {
     // don't think this actually does anything useful.
     if (isLearning()) {
         // TODO(rryan): Fake a one value?
-        emit(messageReceived(mappingKey.status, mappingKey.control, 0x7F));
+        emit messageReceived(mappingKey.status, mappingKey.control, 0x7F);
 
-        QHash<uint16_t, MidiInputMapping>::const_iterator it =
-                m_temporaryInputMappings.find(mappingKey.key);
-        if (it != m_temporaryInputMappings.end()) {
-            for (; it != m_temporaryInputMappings.end() && it.key() == mappingKey.key; ++it) {
+        auto it = m_temporaryInputMappings.constFind(mappingKey.key);
+        if (it != m_temporaryInputMappings.constEnd()) {
+            for (; it != m_temporaryInputMappings.constEnd() && it.key() == mappingKey.key; ++it) {
                 processInputMapping(it.value(), data, timestamp);
             }
             return;
         }
     }
 
-    QHash<uint16_t, MidiInputMapping>::const_iterator it =
-            m_preset.inputMappings.find(mappingKey.key);
-    for (; it != m_preset.inputMappings.end() && it.key() == mappingKey.key; ++it) {
+    auto it = m_preset.getInputMappings().constFind(mappingKey.key);
+    for (; it != m_preset.getInputMappings().constEnd() && it.key() == mappingKey.key; ++it) {
         processInputMapping(it.value(), data, timestamp);
     }
 }

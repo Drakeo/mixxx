@@ -2,17 +2,35 @@
 
 #include <QDateTime>
 
+#include "audio/types.h"
 #include "track/albuminfo.h"
 #include "track/trackinfo.h"
 
-
 namespace mixxx {
 
+namespace audio {
+
+class StreamInfo;
+
+} // namespace audio
+
 class TrackMetadata final {
+    // Audio properties
+    //  - read-only
+    //  - stored in file tags
+    //  - adjusted when opening the audio stream (if available)
+    PROPERTY_SET_BYVAL_GET_BYREF(audio::ChannelCount, channels, ChannelCount)
+    PROPERTY_SET_BYVAL_GET_BYREF(audio::SampleRate, sampleRate, SampleRate)
+    PROPERTY_SET_BYVAL_GET_BYREF(audio::Bitrate, bitrate, Bitrate)
+    PROPERTY_SET_BYVAL_GET_BYREF(Duration, duration, Duration)
+
+    // Track properties
+    //   - read-write
+    //   - stored in file tags
     PROPERTY_SET_BYVAL_GET_BYREF(AlbumInfo, albumInfo, AlbumInfo)
     PROPERTY_SET_BYVAL_GET_BYREF(TrackInfo, trackInfo, TrackInfo)
 
-public:
+  public:
     TrackMetadata() = default;
     TrackMetadata(TrackMetadata&&) = default;
     TrackMetadata(const TrackMetadata&) = default;
@@ -20,6 +38,24 @@ public:
 
     TrackMetadata& operator=(TrackMetadata&&) = default;
     TrackMetadata& operator=(const TrackMetadata&) = default;
+
+    bool updateAudioPropertiesFromStream(
+            const audio::StreamInfo& streamInfo);
+
+    // Adjusts floating-point values to match their string representation
+    // in file tags to account for rounding errors.
+    void normalizeBeforeExport();
+
+    // Returns true if the current metadata differs from the imported metadata
+    // and needs to be exported. A result of false indicates that no export
+    // is needed.
+    // NOTE: Some tag formats like ID3v1/v2 only support integer precision
+    // for storing bpm values. To avoid re-exporting unmodified track metadata
+    // with fractional bpm values over and over again the comparison of bpm
+    // values should be restricted to integer.
+    bool anyFileTagsModified(
+            const TrackMetadata& importedFromFile,
+            Bpm::Comparison cmpBpm = Bpm::Comparison::Default) const;
 
     // Parse an format date/time values according to ISO 8601
     static QDate parseDate(QString str) {
@@ -43,16 +79,13 @@ public:
     static QString reformatYear(QString year);
 };
 
-inline
-bool operator==(const TrackMetadata& lhs, const TrackMetadata& rhs) {
-    return (lhs.getAlbumInfo() == rhs.getAlbumInfo()) &&
-            (lhs.getTrackInfo() == rhs.getTrackInfo());
-}
+bool operator==(const TrackMetadata& lhs, const TrackMetadata& rhs);
 
-inline
-bool operator!=(const TrackMetadata& lhs, const TrackMetadata& rhs) {
+inline bool operator!=(const TrackMetadata& lhs, const TrackMetadata& rhs) {
     return !(lhs == rhs);
 }
+
+QDebug operator<<(QDebug dbg, const TrackMetadata& arg);
 
 } // namespace mixxx
 

@@ -1,59 +1,47 @@
-#ifndef MIXXX_AUDIOSOURCETRACKPROXY_H
-#define MIXXX_AUDIOSOURCETRACKPROXY_H
+#pragma once
 
-
-#include "sources/audiosource.h"
-
+#include "sources/audiosourceproxy.h"
 #include "track/track.h"
-
 
 namespace mixxx {
 
-// Keeps the TIO alive while accessing the audio data
-// of the track. The TIO must not be deleted while
-// accessing the corresponding file to avoid file
-// corruption when writing metadata while the file
-// is still in use.
-class AudioSourceTrackProxy: public AudioSource {
+class TrackPointerHolder {
   public:
-    static AudioSourcePointer create(
-            AudioSourcePointer pAudioSource,
-            TrackPointer pTrack) {
-        return std::make_shared<AudioSourceTrackProxy>(
-                std::move(pAudioSource),
-                std::move(pTrack));
-    }
-
-    AudioSourceTrackProxy(
-            AudioSourcePointer pAudioSource,
-            TrackPointer pTrack)
-        : AudioSource(*pAudioSource),
-          m_pAudioSource(std::move(pAudioSource)),
-          m_pTrack(std::move(pTrack)) {
-    }
-
-    void close() override {
-        m_pAudioSource->close();
-    }
-
-  protected:
-    OpenResult tryOpen(
-            OpenMode mode,
-            const OpenParams& params) override {
-        return tryOpenOn(*m_pAudioSource, mode, params);
-    }
-
-    ReadableSampleFrames readSampleFramesClamped(
-            WritableSampleFrames sampleFrames) override {
-        return readSampleFramesClampedOn(*m_pAudioSource, sampleFrames);
+    explicit TrackPointerHolder(
+            TrackPointer&& pTrack)
+            : m_pTrack(std::move(pTrack)) {
     }
 
   private:
-    AudioSourcePointer m_pAudioSource;
     TrackPointer m_pTrack;
 };
 
+// Keeps the Track object alive while accessing the audio data
+// of the track. The Track object must not be deleted while
+// accessing the corresponding file to avoid file
+// corruption when writing metadata while the file
+// is still in use.
+class AudioSourceTrackProxy : private TrackPointerHolder,
+                              // The audio source must be closed BEFORE releasing the track
+                              // pointer to close any open file handles. Otherwise exporting
+                              // track metadata into the same file may not work, because the
+                              // file is still locked by the OS!
+                              public AudioSourceProxy {
+  public:
+    static AudioSourcePointer create(
+            TrackPointer pTrack,
+            AudioSourcePointer pAudioSource) {
+        return std::make_shared<AudioSourceTrackProxy>(
+                std::move(pTrack),
+                std::move(pAudioSource));
+    }
+
+    AudioSourceTrackProxy(
+            TrackPointer pTrack,
+            AudioSourcePointer pAudioSource)
+            : TrackPointerHolder(std::move(pTrack)),
+              AudioSourceProxy(std::move(pAudioSource)) {
+    }
+};
+
 } // namespace mixxx
-
-
-#endif // MIXXX_AUDIOSOURCETRACKPROXY_H

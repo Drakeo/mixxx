@@ -34,6 +34,8 @@ class DlgPrefVinyl : public DlgPreferencePage, Ui::DlgPrefVinylDlg  {
     DlgPrefVinyl(QWidget* pParent, VinylControlManager* m_pVCMan, UserSettingsPointer _config);
     virtual ~DlgPrefVinyl();
 
+    QUrl helpUrl() const override;
+
   public slots:
     void slotUpdate();
     void slotApply();
@@ -68,7 +70,6 @@ class DlgPrefVinyl : public DlgPreferencePage, Ui::DlgPrefVinylDlg  {
     UserSettingsPointer config;
     QList<ControlProxy*> m_COSpeeds;
     ControlProxy* m_pNumDecks;
-    int m_iConfiguredDecks;
 };
 
 #endif

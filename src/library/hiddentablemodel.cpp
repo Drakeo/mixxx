@@ -1,11 +1,13 @@
 #include "library/hiddentablemodel.h"
 
+#include "library/trackcollection.h"
+#include "library/trackcollectionmanager.h"
 #include "library/dao/trackschema.h"
 
 
 HiddenTableModel::HiddenTableModel(QObject* parent,
-                                   TrackCollection* pTrackCollection)
-        : BaseSqlTableModel(parent, pTrackCollection, "mixxx.db.model.missing") {
+                                   TrackCollectionManager* pTrackCollectionManager)
+        : BaseSqlTableModel(parent, pTrackCollectionManager, "mixxx.db.model.missing") {
     setTableModel();
 }
 
@@ -39,19 +41,13 @@ void HiddenTableModel::setTableModel(int id) {
     QStringList tableColumns;
     tableColumns << LIBRARYTABLE_ID;
     setTable(tableName, LIBRARYTABLE_ID, tableColumns,
-             m_pTrackCollection->getTrackSource());
+             m_pTrackCollectionManager->internalCollection()->getTrackSource());
     setDefaultSort(fieldIndex("artist"), Qt::AscendingOrder);
     setSearch("");
 }
 
 void HiddenTableModel::purgeTracks(const QModelIndexList& indices) {
-    QList<TrackId> trackIds;
-
-    foreach (QModelIndex index, indices) {
-        trackIds.append(getTrackId(index));
-    }
-
-    m_pTrackCollection->purgeTracks(trackIds);
+    m_pTrackCollectionManager->purgeTracks(getTrackRefs(indices));
 
     // TODO(rryan) : do not select, instead route event to BTC and notify from
     // there.
@@ -65,7 +61,7 @@ void HiddenTableModel::unhideTracks(const QModelIndexList& indices) {
         trackIds.append(getTrackId(index));
     }
 
-    m_pTrackCollection->unhideTracks(trackIds);
+    m_pTrackCollectionManager->unhideTracks(trackIds);
 
     // TODO(rryan) : do not select, instead route event to BTC and notify from
     // there.
@@ -73,19 +69,16 @@ void HiddenTableModel::unhideTracks(const QModelIndexList& indices) {
 }
 
 bool HiddenTableModel::isColumnInternal(int column) {
-    if (column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_ID) ||
+    return column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_ID) ||
             column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_PLAYED) ||
             column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_BPM_LOCK) ||
             column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_MIXXXDELETED) ||
-            column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_KEY_ID)||
+            column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_KEY_ID) ||
             column == fieldIndex(ColumnCache::COLUMN_TRACKLOCATIONSTABLE_FSDELETED) ||
             column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_COVERART_SOURCE) ||
             column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_COVERART_TYPE) ||
             column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_COVERART_LOCATION) ||
-            column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_COVERART_HASH)) {
-        return true;
-    }
-    return false;
+            column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_COVERART_HASH);
 }
 
 // Override flags from BaseSqlModel since we don't want edit this model

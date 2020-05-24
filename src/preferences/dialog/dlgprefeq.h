@@ -38,6 +38,8 @@ class DlgPrefEQ : public DlgPreferencePage, public Ui::DlgPrefEQDlg  {
               UserSettingsPointer _config);
     virtual ~DlgPrefEQ();
 
+    QUrl helpUrl() const override;
+
     QString getEQEffectGroupForDeck(int deck) const;
     QString getQuickEffectGroupForDeck(int deck) const;
 
@@ -88,6 +90,7 @@ class DlgPrefEQ : public DlgPreferencePage, public Ui::DlgPrefEQDlg  {
     EffectsManager* m_pEffectsManager;
     EqualizerRackPointer m_pEQEffectRack;
     QuickEffectRackPointer m_pQuickEffectRack;
+    OutputEffectRackPointer m_pOutputEffectRack;
     QLabel* m_firstSelectorLabel;
     QList<QComboBox*> m_deckEqEffectSelectors;
     QList<QComboBox*> m_deckQuickEffectSelectors;

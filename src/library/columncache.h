@@ -6,9 +6,8 @@
 #include <QStringList>
 
 #include "track/keyutils.h"
+#include "control/controlproxy.h"
 #include "preferences/usersettings.h"
-
-class ControlProxy;
 
 // Caches the index of frequently used columns and provides a lookup-table of
 // column name to index.
@@ -50,6 +49,7 @@ class ColumnCache : public QObject {
         COLUMN_LIBRARYTABLE_KEY_ID,
         COLUMN_LIBRARYTABLE_BPM_LOCK,
         COLUMN_LIBRARYTABLE_PREVIEW,
+        COLUMN_LIBRARYTABLE_COLOR,
         COLUMN_LIBRARYTABLE_COVERART,
         COLUMN_LIBRARYTABLE_COVERART_SOURCE,
         COLUMN_LIBRARYTABLE_COVERART_TYPE,
@@ -65,6 +65,8 @@ class ColumnCache : public QObject {
         COLUMN_PLAYLISTTRACKSTABLE_ARTIST,
         COLUMN_PLAYLISTTRACKSTABLE_TITLE,
         COLUMN_PLAYLISTTRACKSTABLE_DATETIMEADDED,
+
+        COLUMN_REKORDBOX_ANALYZE_PATH,
 
         // NUM_COLUMNS should always be the last item.
         NUM_COLUMNS
@@ -107,6 +109,11 @@ class ColumnCache : public QObject {
     QMap<QString, int> m_columnIndexByName;
     // A mapping from column enum to logical index.
     int m_columnIndexByEnum[NUM_COLUMNS];
+
+    KeyUtils::KeyNotation keyNotation() const {
+        return KeyUtils::keyNotationFromNumericValue(
+                m_pKeyNotationCP->get());
+    }
 
   private:
     ControlProxy* m_pKeyNotationCP;
