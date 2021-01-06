@@ -5,13 +5,13 @@
 #include <QSharedPointer>
 #include <QSqlDatabase>
 
-#include "library/crate/cratestorage.h"
 #include "library/dao/analysisdao.h"
 #include "library/dao/cuedao.h"
 #include "library/dao/directorydao.h"
 #include "library/dao/libraryhashdao.h"
 #include "library/dao/playlistdao.h"
 #include "library/dao/trackdao.h"
+#include "library/trackset/crate/cratestorage.h"
 #include "preferences/usersettings.h"
 #include "util/thread_affinity.h"
 
@@ -30,10 +30,10 @@ class TrackCollection : public QObject,
     ~TrackCollection() override;
 
     void repairDatabase(
-            QSqlDatabase database) override;
+            const QSqlDatabase& database) override;
 
     void connectDatabase(
-            QSqlDatabase database) override;
+            const QSqlDatabase& database) override;
     void disconnectDatabase() override;
 
     QSqlDatabase database() const {
@@ -113,9 +113,9 @@ class TrackCollection : public QObject,
     // Forwarded signals from TrackDAO
     void trackClean(TrackId trackId);
     void trackDirty(TrackId trackId);
-    void tracksAdded(QSet<TrackId> trackIds);
-    void tracksChanged(QSet<TrackId> trackIds);
-    void tracksRemoved(QSet<TrackId> trackIds);
+    void tracksAdded(const QSet<TrackId>& trackIds);
+    void tracksChanged(const QSet<TrackId>& trackIds);
+    void tracksRemoved(const QSet<TrackId>& trackIds);
     void multipleTracksChanged();
 
     void crateInserted(CrateId id);
@@ -147,7 +147,7 @@ class TrackCollection : public QObject,
 
     bool addDirectory(const QString& dir);
     bool removeDirectory(const QString& dir);
-    void relocateDirectory(QString oldDir, QString newDir);
+    void relocateDirectory(const QString& oldDir, const QString& newDir);
 
     void saveTrack(Track* pTrack);
 

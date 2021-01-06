@@ -4,12 +4,16 @@
 
 #include "engine/sync/internalclock.h"
 
-static const char* kInternalClockGroup = "[InternalClock]";
+namespace {
+
+const QString kInternalClockGroup = QStringLiteral("[InternalClock]");
+
+} // anonymous namespace
 
 BaseSyncableListener::BaseSyncableListener(UserSettingsPointer pConfig)
         : m_pConfig(pConfig),
           m_pInternalClock(new InternalClock(kInternalClockGroup, this)),
-          m_pMasterSyncable(NULL) {
+          m_pMasterSyncable(nullptr) {
     qRegisterMetaType<SyncMode>("SyncMode");
     m_pInternalClock->setMasterBpm(124.0);
 }
@@ -38,7 +42,7 @@ void BaseSyncableListener::onCallbackEnd(int sampleRate, int bufferSize) {
 }
 
 EngineChannel* BaseSyncableListener::getMaster() const {
-    return m_pMasterSyncable ? m_pMasterSyncable->getChannel() : NULL;
+    return m_pMasterSyncable ? m_pMasterSyncable->getChannel() : nullptr;
 }
 
 Syncable* BaseSyncableListener::getSyncableForGroup(const QString& group) {
@@ -47,7 +51,7 @@ Syncable* BaseSyncableListener::getSyncableForGroup(const QString& group) {
             return pSyncable;
         }
     }
-    return NULL;
+    return nullptr;
 }
 
 bool BaseSyncableListener::syncDeckExists() const {
@@ -137,7 +141,7 @@ void BaseSyncableListener::setMasterParams(Syncable* pSource, double beat_distan
 
 void BaseSyncableListener::checkUniquePlayingSyncable() {
     int playing_sync_decks = 0;
-    Syncable* unique_syncable = NULL;
+    Syncable* unique_syncable = nullptr;
     foreach (Syncable* pSyncable, m_syncables) {
         if (!pSyncable->isSynchronized()) {
             continue;

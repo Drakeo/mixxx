@@ -1,6 +1,9 @@
 #include "dialog/dlgabout.h"
-#include "util/version.h"
+
 #include <QFile>
+
+#include "moc_dlgabout.cpp"
+#include "util/version.h"
 
 DlgAbout::DlgAbout(QWidget* parent) : QDialog(parent), Ui::DlgAboutDlg() {
     setupUi(this);
@@ -93,8 +96,20 @@ DlgAbout::DlgAbout(QWidget* parent) : QDialog(parent), Ui::DlgAboutDlg() {
             << "Simon Harst"
             << "Harshit Maurya"
             << "Janek Fischer"
+            << "St&eacute;phane Lepin"
+            << "J&eacute;r&ocirc;me Blanchi"
             << "Chris Hills"
-            << "David Lowenfels";
+            << "David Lowenfels"
+            << "Matthieu Bouron"
+            << "Nathan Korth"
+            << "Kristiyan Katsarov"
+            << "J&ouml;rg Wartenberg"
+            << "Sanskar Bajpai"
+            << "Edward Millen"
+            << "Frank Breitling"
+            << "Christian"
+            << "Geraldo Nascimento"
+            << "Albert Aparicio";
 
     QStringList specialThanks;
     specialThanks
@@ -321,4 +336,7 @@ DlgAbout::DlgAbout(QWidget* parent) : QDialog(parent), Ui::DlgAboutDlg() {
              << sectionTemplate.arg(s_specialThanks,
                                     specialThanks.join("<br>"));
     textBrowser->setHtml(sections.join(""));
+
+    connect(buttonBox, &QDialogButtonBox::accepted, this, &DlgAbout::accept);
+    connect(buttonBox, &QDialogButtonBox::rejected, this, &DlgAbout::reject);
 }

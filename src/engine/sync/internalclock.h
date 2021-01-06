@@ -1,5 +1,4 @@
-#ifndef INTERNALCLOCK_H
-#define INTERNALCLOCK_H
+#pragma once
 
 #include <QObject>
 #include <QString>
@@ -22,7 +21,7 @@ class EngineSync;
 class InternalClock : public QObject, public Clock, public Syncable {
     Q_OBJECT
   public:
-    InternalClock(const char* pGroup, SyncableListener* pEngineSync);
+    InternalClock(const QString& group, SyncableListener* pEngineSync);
     ~InternalClock() override;
 
     const QString& getGroup() const override {
@@ -65,7 +64,7 @@ class InternalClock : public QObject, public Clock, public Syncable {
   private:
     void updateBeatLength(int sampleRate, double bpm);
 
-    QString m_group;
+    const QString m_group;
     SyncableListener* m_pEngineSync;
     QScopedPointer<ControlLinPotmeter> m_pClockBpm;
     QScopedPointer<ControlObject> m_pClockBeatDistance;
@@ -75,7 +74,6 @@ class InternalClock : public QObject, public Clock, public Syncable {
     int m_iOldSampleRate;
     double m_dOldBpm;
     double m_dBaseBpm;
-    QAtomicInteger<bool> m_bClockUpdated;
 
     // The internal clock rate is stored in terms of samples per beat.
     // Fractional values are allowed.
@@ -85,5 +83,3 @@ class InternalClock : public QObject, public Clock, public Syncable {
     // distance is m_dClockPosition / m_dBeatLength).
     double m_dClockPosition;
 };
-
-#endif /* INTERNALCLOCK_H */
