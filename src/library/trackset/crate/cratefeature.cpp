@@ -44,8 +44,8 @@ CrateFeature::CrateFeature(Library* pLibrary,
         : BaseTrackSetFeature(pLibrary, pConfig, "CRATEHOME"),
           m_cratesIcon(":/images/library/ic_library_crates.svg"),
           m_lockedCrateIcon(":/images/library/ic_library_locked_tracklist.svg"),
-          m_pTrackCollection(pLibrary->trackCollections()->internalCollection()),
-          m_crateTableModel(this, pLibrary->trackCollections()) {
+          m_pTrackCollection(pLibrary->trackCollectionManager()->internalCollection()),
+          m_crateTableModel(this, pLibrary->trackCollectionManager()) {
     initActions();
 
     // construct child model
@@ -107,7 +107,7 @@ void CrateFeature::initActions() {
             &QAction::triggered,
             this,
             &CrateFeature::slotCreateImportCrate);
-    m_pExportPlaylistAction = make_parented<QAction>(tr("Export Crate"), this);
+    m_pExportPlaylistAction = make_parented<QAction>(tr("Export Crate as Playlist"), this);
     connect(m_pExportPlaylistAction.get(),
             &QAction::triggered,
             this,
@@ -117,6 +117,23 @@ void CrateFeature::initActions() {
             &QAction::triggered,
             this,
             &CrateFeature::slotExportTrackFiles);
+#ifdef __ENGINEPRIME__
+    m_pExportAllCratesAction = make_parented<QAction>(tr("Export to Engine Prime"), this);
+    connect(m_pExportAllCratesAction.get(),
+            &QAction::triggered,
+            this,
+            &CrateFeature::exportAllCrates);
+    m_pExportCrateAction = make_parented<QAction>(tr("Export to Engine Prime"), this);
+    connect(m_pExportCrateAction.get(),
+            &QAction::triggered,
+            this,
+            [this]() {
+                CrateId crateId = crateIdFromIndex(m_lastRightClickedIndex);
+                if (crateId.isValid()) {
+                    emit exportCrate(crateId);
+                }
+            });
+#endif
 }
 
 void CrateFeature::connectLibrary(Library* pLibrary) {
@@ -168,7 +185,7 @@ QString CrateFeature::formatRootViewHtml() const {
                "DJ with.");
     QString cratesSummary2 =
             tr("Make a crate for your next gig, for your favorite electrohouse "
-               "tracks, or for your most requested songs.");
+               "tracks, or for your most requested tracks.");
     QString cratesSummary3 =
             tr("Crates let you organize your music however you'd like!");
 
@@ -221,7 +238,7 @@ bool CrateFeature::dropAcceptChild(
     // pSource != nullptr it is a drop from inside Mixxx and indicates all
     // tracks already in the DB
     QList<TrackId> trackIds =
-            m_pTrackCollection->resolveTrackIdsFromUrls(urls, !pSource);
+            m_pLibrary->trackCollectionManager()->resolveTrackIdsFromUrls(urls, !pSource);
     if (!trackIds.size()) {
         return false;
     }
@@ -315,6 +332,10 @@ void CrateFeature::onRightClick(const QPoint& globalPos) {
     menu.addAction(m_pCreateCrateAction.get());
     menu.addSeparator();
     menu.addAction(m_pCreateImportPlaylistAction.get());
+#ifdef __ENGINEPRIME__
+    menu.addSeparator();
+    menu.addAction(m_pExportAllCratesAction.get());
+#endif
     menu.exec(globalPos);
 }
 
@@ -356,6 +377,9 @@ void CrateFeature::onRightClickChild(
     }
     menu.addAction(m_pExportPlaylistAction.get());
     menu.addAction(m_pExportTrackFilesAction.get());
+#ifdef __ENGINEPRIME__
+    menu.addAction(m_pExportCrateAction.get());
+#endif
     menu.exec(globalPos);
 }
 
@@ -705,7 +729,7 @@ void CrateFeature::slotExportPlaylist() {
     // Create list of files of the crate
     // Create a new table model since the main one might have an active search.
     QScopedPointer<CrateTableModel> pCrateTableModel(
-            new CrateTableModel(this, m_pLibrary->trackCollections()));
+            new CrateTableModel(this, m_pLibrary->trackCollectionManager()));
     pCrateTableModel->selectCrate(m_crateTableModel.selectedCrate());
     pCrateTableModel->select();
 
@@ -731,7 +755,7 @@ void CrateFeature::slotExportPlaylist() {
 void CrateFeature::slotExportTrackFiles() {
     // Create a new table model since the main one might have an active search.
     QScopedPointer<CrateTableModel> pCrateTableModel(
-            new CrateTableModel(this, m_pLibrary->trackCollections()));
+            new CrateTableModel(this, m_pLibrary->trackCollectionManager()));
     pCrateTableModel->selectCrate(m_crateTableModel.selectedCrate());
     pCrateTableModel->select();
 

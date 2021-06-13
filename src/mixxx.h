@@ -16,27 +16,29 @@
 #include "util/parented_ptr.h"
 #include "util/timer.h"
 
-class BroadcastManager;
 class ChannelHandleFactory;
-class ControllerManager;
 class ControlPushButton;
 class DlgDeveloperTools;
 class DlgPreferences;
-class EffectsManager;
+class DlgKeywheel;
 class EngineMaster;
 class GuiTick;
-class KeyboardEventFilter;
 class LaunchImage;
 class Library;
-class PlayerManager;
-class RecordingManager;
-class SettingsManager;
-class SkinLoader;
-class SoundManager;
-class TrackCollectionManager;
-class VinylControlManager;
 class VisualsManager;
 class WMainMenuBar;
+
+namespace mixxx {
+namespace skin {
+class SkinLoader;
+}
+} // namespace mixxx
+
+#ifdef __ENGINEPRIME__
+namespace mixxx {
+class LibraryExporter;
+} // namespace mixxx
+#endif
 
 /// This Class is the base class for Mixxx.
 /// It sets up the main window providing a menubar.
@@ -67,6 +69,8 @@ class MixxxMainWindow : public QMainWindow {
     void slotOptionsPreferences();
     /// show the about dialog
     void slotHelpAbout();
+    // show keywheel
+    void slotShowKeywheel(bool toggle);
     /// toggle full screen mode
     void slotViewFullScreen(bool toggle);
     /// open the developer tools dialog.
@@ -117,7 +121,7 @@ class MixxxMainWindow : public QMainWindow {
     QWidget* m_pCentralWidget;
     LaunchImage* m_pLaunchImage;
 
-    std::shared_ptr<SkinLoader> m_pSkinLoader;
+    std::shared_ptr<mixxx::skin::SkinLoader> m_pSkinLoader;
     GuiTick* m_pGuiTick;
     VisualsManager* m_pVisualsManager;
 
@@ -126,10 +130,15 @@ class MixxxMainWindow : public QMainWindow {
     DlgDeveloperTools* m_pDeveloperToolsDlg;
 
     DlgPreferences* m_pPrefDlg;
+    parented_ptr<DlgKeywheel> m_pKeywheel;
+
+#ifdef __ENGINEPRIME__
+    // Library exporter
+    std::unique_ptr<mixxx::LibraryExporter> m_pLibraryExporter;
+#endif
 
     mixxx::TooltipsPreference m_toolTipsCfg;
 
-    ControlPushButton* m_pTouchShift;
     mixxx::ScreenSaverPreference m_inhibitScreensaver;
 
     QSet<ControlObject*> m_skinCreatedControls;

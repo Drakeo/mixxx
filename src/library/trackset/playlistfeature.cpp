@@ -40,7 +40,7 @@ PlaylistFeature::PlaylistFeature(Library* pLibrary, UserSettingsPointer pConfig)
         : BasePlaylistFeature(pLibrary,
                   pConfig,
                   new PlaylistTableModel(nullptr,
-                          pLibrary->trackCollections(),
+                          pLibrary->trackCollectionManager(),
                           "mixxx.db.model.playlist"),
                   QStringLiteral("PLAYLISTHOME")),
           m_icon(QStringLiteral(":/images/library/ic_library_playlist.svg")) {
@@ -110,8 +110,7 @@ bool PlaylistFeature::dropAcceptChild(
     // playlist.
     // pSource != nullptr it is a drop from inside Mixxx and indicates all
     // tracks already in the DB
-    QList<TrackId> trackIds = m_pLibrary->trackCollections()
-                                      ->internalCollection()
+    QList<TrackId> trackIds = m_pLibrary->trackCollectionManager()
                                       ->resolveTrackIdsFromUrls(urls, !pSource);
     if (!trackIds.size()) {
         return false;
@@ -132,7 +131,7 @@ bool PlaylistFeature::dragMoveAcceptChild(const QModelIndex& index, const QUrl& 
 
 QList<BasePlaylistFeature::IdAndLabel> PlaylistFeature::createPlaylistLabels() {
     QSqlDatabase database =
-            m_pLibrary->trackCollections()->internalCollection()->database();
+            m_pLibrary->trackCollectionManager()->internalCollection()->database();
 
     QList<BasePlaylistFeature::IdAndLabel> playlistLabels;
     QString queryString = QStringLiteral(
@@ -201,7 +200,7 @@ QList<BasePlaylistFeature::IdAndLabel> PlaylistFeature::createPlaylistLabels() {
 QString PlaylistFeature::fetchPlaylistLabel(int playlistId) {
     // Setup the sidebar playlist model
     QSqlDatabase database =
-            m_pLibrary->trackCollections()->internalCollection()->database();
+            m_pLibrary->trackCollectionManager()->internalCollection()->database();
     QSqlTableModel playlistTableModel(this, database);
     playlistTableModel.setTable("PlaylistsCountsDurations");
     QString filter = "id=" + QString::number(playlistId);
@@ -317,7 +316,7 @@ void PlaylistFeature::slotPlaylistTableRenamed(
 QString PlaylistFeature::getRootViewHtml() const {
     QString playlistsTitle = tr("Playlists");
     QString playlistsSummary =
-            tr("Playlists are ordered lists of songs that allow you to plan "
+            tr("Playlists are ordered lists of tracks that allow you to plan "
                "your DJ sets.");
     QString playlistsSummary2 =
             tr("Some DJs construct playlists before they perform live, but "
@@ -327,8 +326,8 @@ QString PlaylistFeature::getRootViewHtml() const {
                "pay close attention to how your audience reacts to the music "
                "you've chosen to play.");
     QString playlistsSummary4 =
-            tr("It may be necessary to skip some songs in your prepared "
-               "playlist or add some different songs in order to maintain the "
+            tr("It may be necessary to skip some tracks in your prepared "
+               "playlist or add some different tracks in order to maintain the "
                "energy of your audience.");
     QString createPlaylistLink = tr("Create New Playlist");
 
