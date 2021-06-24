@@ -324,7 +324,7 @@ WSearchLineEdit {
 
   #FxFlowIndicatorCollapsed {
     margin: 0px 0px 0px 0px;
-    background-image: url(skin:/palemoon/style/fx_flow_horizontal.svg) no-repeat center center;
+    image: url(skin:/palemoon/style/fx_flow_horizontal.svg) no-repeat center center;
   }
   #ToolbarSeparator {
     margin: 0px 5px;
@@ -1371,6 +1371,7 @@ WEffectSelector QAbstractScrollArea,
 #BroadcastButton[displayValue="1"], /* connecting */
 #BroadcastButton[displayValue="2"], /* broadcasting */
 #BroadcastButton[displayValue="3"], /* failure */
+#BroadcastButton[displayValue="4"], /* warning */
 #RecDuration[highlight="1"],  /* initializing */
 #RecDuration[highlight="2"],  /* recording */
 #SkinSettingsToggle[displayValue="1"],
@@ -1457,6 +1458,7 @@ WEffectSelector:!editable,
   #BroadcastButton[displayValue="1"],
   #BroadcastButton[displayValue="2"],
   #BroadcastButton[displayValue="3"],
+  #BroadcastButton[displayValue="4"],
   #SkinSettingsToggle[displayValue="1"],
   #LibraryFeatureControls QPushButton:pressed
   QPushButton#pushButtonAutoDJ:checked,
@@ -1520,7 +1522,9 @@ WPushButton#CueDeck,
 #PlayCueMini WPushButton,
 WPushButton#LoopActivate,
 WPushButton#RateControls WPushButton,
-WPushButton#SyncDeck, WPushButton#SyncSampler,
+WPushButton#SyncDeck,
+WPushButton#SyncLeader,
+WPushButton#SyncSampler,
 #MixerContainer WPushButton,
 #FxUnitContainer WPushButton,
 #Sampler WPushButton,
@@ -1631,11 +1635,14 @@ WPushButton#Reverse[pressed="true"],
 #LoopActivate[value="1"],
 #Reloop[value="1"],
 #SyncSampler[displayValue="1"],
+#SyncDeck[value="1"],
+#SyncLeader[value="2"],
 #MicTalk[value="1"], #AuxPlay[value="1"],
 #MicDucking[value="1"],
 #MicDucking[value="2"],
 #VinylButton[displayValue="1"],
 #PassthroughButton[displayValue="1"],
+#BroadcastButton[displayValue="4"], /* warning */
 QPushButton#pushButtonAutoDJ:checked,
 QPushButton#pushButtonAnalyze:checked {
   background-color: #b24c12;
@@ -1649,7 +1656,7 @@ QPushButton#pushButtonAnalyze:checked {
   }
 /* dim orange for momentary controls */
 #KeyControls WPushButton[pressed="true"],
-#SyncDeck[value="1"],
+#SyncLeader[value="1"],
 WPushButton#LoopIn[pressed="true"],
 WPushButton#LoopOut[pressed="true"],
 #BeatjumpControls WPushButton[value="1"],
@@ -1772,7 +1779,7 @@ WPushButton#FxSuperLinkInvertButton[displayValue="0"] {
 
 /* Yellow */
 #RecFeedback[displayValue="1"],     /* initialize recording */
-#BroadcastButton[displayValue="1"]  /* connecting */ {
+#BroadcastButton[displayValue="1"] {  /* connecting */
   background-color: #d09300;
 }
 
@@ -2103,6 +2110,10 @@ WPushButton#PlayDeck[value="0"] {
     image: url(skin:/palemoon/buttons/btn__sync_deck_active.svg) no-repeat center center;
   }
 
+#SyncLeader {
+  image: url(skin:/palemoon/buttons/btn__leader_deck.svg) no-repeat center center;
+  }
+
   #SyncSampler {
     image: url(skin:/palemoon/buttons/btn__sync_sampler.svg) no-repeat center center;
     }
@@ -2195,21 +2206,15 @@ WPushButton#PlayDeck[value="0"] {
     image: url(skin:/palemoon/buttons/btn__split_active.svg) no-repeat center center;
   }
 
-#FxExpand,
-#SamplerExpand,
-#LibExpand {
-  background-repeat: no-repeat;
-  background-position: center center;
-}
 #FxExpand[value="0"],
 #SamplerExpand[value="0"],
 #LibExpand[value="0"] {
-  background: url(skin:/palemoon/buttons/btn__expand_dim.svg) no-repeat center center;
+  image: url(skin:/palemoon/buttons/btn__expand_dim.svg) no-repeat center center;
   }
   #FxExpand[value="1"],
   #SamplerExpand[value="1"],
   #LibExpand[value="1"] {
-    background: url(skin:/palemoon/buttons/btn__collapse_dim.svg) no-repeat center center;
+    image: url(skin:/palemoon/buttons/btn__collapse_dim.svg) no-repeat center center;
   }
 
 #MixModeButton[value="0"] {
@@ -2390,7 +2395,8 @@ WPushButton#PlayDeck[value="0"] {
   }
   #BroadcastButton[displayValue="1"],
   #BroadcastButton[displayValue="2"],
-  #BroadcastButton[displayValue="3"] {
+  #BroadcastButton[displayValue="3"],
+  #BroadcastButton[displayValue="4"] {
     image: url(skin:/palemoon/buttons/btn__broadcast_on.svg) no-repeat left top;
   }
 
@@ -2782,11 +2788,11 @@ WLibrary QLabel, WLibrary QRadioButton {
 }
 
 WLibrary QRadioButton::indicator:checked {
-  background: url(skin:/palemoon/buttons/btn__lib_radio_button_on_blue.svg) center center;
+  image: url(skin:/palemoon/buttons/btn__lib_radio_button_on_blue.svg) center center;
 }
 
 WLibrary QRadioButton::indicator:unchecked {
-  background: url(skin:/palemoon/buttons/btn__lib_radio_button_off.svg) center center;
+  image: url(skin:/palemoon/buttons/btn__lib_radio_button_off.svg) center center;
 }
 
 /* Library feature pushbuttons

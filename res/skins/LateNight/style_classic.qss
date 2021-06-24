@@ -245,7 +245,7 @@ WSearchLineEdit,
     min-width: 1px;
     max-width: 1px;
     margin: 2px 1px;
-    background: url(skin:/classic/style/fx_separator.svg) no-repeat center center;
+    image: url(skin:/classic/style/fx_separator.svg) no-repeat center center;
   }
   #FxSlotSeparatorH {
     min-height: 2px;
@@ -1181,7 +1181,10 @@ WBeatSpinBox, #spinBoxTransition,
 #FxAssignButtons WPushButton[displayValue="1"],
 #GuiToggleButton[displayValue="1"],
 #GuiToggleButton[displayValue="2"],
-#BroadcastButton[displayValue="1"], /* connecting: yellow */
+#BroadcastButton[displayValue="1"],
+#BroadcastButton[displayValue="2"],
+#BroadcastButton[displayValue="3"],
+#BroadcastButton[displayValue="4"],
 #RecDuration[highlight="1"],
 #RecDuration[highlight="2"],
 #SkinSettingsToggle[displayValue="1"],
@@ -1274,6 +1277,7 @@ WPushButton#FxAssignButton1[displayValue="1"],
 #BroadcastButton[displayValue="1"],
 #BroadcastButton[displayValue="2"],
 #BroadcastButton[displayValue="3"],
+#BroadcastButton[displayValue="4"],
 #SkinSettingsToggle[displayValue="1"],
 #LibraryFeatureControls QPushButton:pressed,
 QPushButton#pushButtonAutoDJ:checked,
@@ -1314,7 +1318,7 @@ WPushButton#PlayIndicator,
 WPushButton#CueDeck,
 #PlayCueMini WPushButton,
 WPushButton#LoopActivate,
-#RateControls WPushButton,
+WPushButton#RateControls WPushButton,
 WPushButton#SyncDeck,
 WPushButton#SyncLeader,
 WPushButton#SyncSampler,
@@ -1378,10 +1382,17 @@ WPushButton#SkinSettingsToggle[displayValue="0"] {
   background-color: #262626;
 }
 
+/* Orange for 'partially active' status */
+#SyncLeader[value="1"] {
+background-color: #db7700;
+}
+
 /* Red for 'active' status */
 #BeatgridControls WPushButton[value="1"],
 #RateControls WPushButton[value="1"],
-#SyncDeck[value="1"], #SyncSampler[displayValue="1"],
+#SyncDeck[value="1"],
+#SyncLeader[value="2"],
+#SyncSampler[displayValue="1"],
 WPushButton#PlayDeck[displayValue="1"],
 WPushButton#PlayDeckMini[displayValue="1"],
 WPushButton#PlaySampler[displayValue="1"],
@@ -1442,7 +1453,8 @@ QPushButton#pushButtonRepeatPlaylist:checked {
   background-color: #888;
 }
 
-#BroadcastButton[displayValue="3"] {
+#BroadcastButton[displayValue="3"],
+#BroadcastButton[displayValue="4"] {
   /* pink */
   background-color: #f856e7;
 }
@@ -1662,7 +1674,7 @@ WPushButton#SamplerExpand[displayValue="0"],
   }
 
 #SyncLeader {
-  background: url(skin:/classic/buttons/btn__leader_deck.svg) no-repeat center center;
+  image: url(skin:/classic/buttons/btn__leader_deck.svg) no-repeat center center;
   }
 
   #SyncSampler {
@@ -1881,7 +1893,8 @@ WPushButton#SamplerExpand[displayValue="0"],
   }
   #BroadcastButton[displayValue="1"],
   #BroadcastButton[displayValue="2"],
-  #BroadcastButton[displayValue="3"] {
+  #BroadcastButton[displayValue="3"],
+  #BroadcastButton[displayValue="4"] {
     image: url(skin:/classic/buttons/btn__broadcast_on.svg) no-repeat left top;
   }
 
